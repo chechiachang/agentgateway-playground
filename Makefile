@@ -11,6 +11,6 @@ login:
 
 # Reuse the stored Vault session: eval "$(make jwt)".
 jwt:
-	@token=$$(docker compose exec -T vault vault read -field=token identity/oidc/token/agentgateway-access role=agentgateway-access) || exit $$?; \
+	@token=$$(docker compose exec -T vault vault read -field=token identity/oidc/token/agentgateway-access) || exit $$?; \
 	  printf '%s' "$$token" | LC_ALL=C grep -Eq '^[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+$$' || { echo 'Vault returned an invalid JWT' >&2; exit 1; }; \
 	  printf "export JWT='%s'\n" "$$token"

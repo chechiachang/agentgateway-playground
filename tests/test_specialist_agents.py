@@ -3,7 +3,7 @@ import importlib.util
 import json
 from pathlib import Path
 import unittest
-from unittest.mock import patch
+from unittest.mock import MagicMock, patch
 
 spec = importlib.util.spec_from_file_location("demo_specialists", Path(__file__).resolve().parents[1] / "examples/demo-server.py")
 demo = importlib.util.module_from_spec(spec)
@@ -30,6 +30,22 @@ class ResearchSafetyTests(unittest.TestCase):
         with self.assertRaises(ValueError):
             demo.call_tool("research", {"url": "https://www.iana.org/", "extra": True})
 
+    @patch.object(demo, "validate_research_url", return_value="https://www.iana.org/")
+    @patch.object(demo, "build_opener")
+    def test_response_read_errors_become_value_errors(self, build_opener, _):
+        response = MagicMock()
+        response.__enter__.return_value = response
+        response.geturl.return_value = "https://www.iana.org/"
+        response.headers.get_content_type.return_value = "text/plain"
+        response.headers.get.return_value = None
+        response.status = 200
+        for error in (TimeoutError("timed out"), OSError("connection reset")):
+            with self.subTest(error=type(error).__name__):
+                response.read.side_effect = error
+                build_opener.return_value.open.return_value = response
+                with self.assertRaisesRegex(ValueError, "could not be fetched"):
+                    demo.research("https://www.iana.org/")
+
 
 class DataAnalystTests(unittest.TestCase):
     def test_numeric_and_categorical_summary(self):
@@ -45,6 +61,16 @@ class DataAnalystTests(unittest.TestCase):
         for data, fmt in (("{}", "json"), ("x\n1,2", "csv"), ("[]", "json"), ("x", "xml"), ("x" * 65537, "csv")):
             with self.subTest(fmt=fmt, data=data[:20]), self.assertRaises(ValueError):
                 demo.data_summary(data, fmt)
+
+    def test_overflow_safe_statistics_and_nested_categories(self):
+        summary = demo.data_summary("x\n1e308\n1e308\n", "csv")["column_summaries"]["x"]
+        self.assertEqual(summary["mean"], 1e308)
+        self.assertEqual(summary["median"], 1e308)
+        nested = demo.data_summary(
+            '[{"x":{"details":{"team":"a"}}},{"x":{"details":{"team":"a"}}}]', "json"
+        )["column_summaries"]["x"]
+        self.assertEqual(nested["distinct"], 1)
+        self.assertEqual(nested["top_values"], [("{'details': {'team': 'a'}}", 2)])
 
     def test_tool_strict_arguments(self):
         result = demo.call_tool("data_summary", {"format": "csv", "data": "x\n1\n"})

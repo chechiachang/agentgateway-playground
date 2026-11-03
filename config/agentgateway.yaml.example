@@ -31,10 +31,10 @@ llm:
   policies:
     jwtAuth: &vault-jwt
       mode: strict
-      issuer: http://localhost:8200/v1/identity/oidc/provider/agentgateway
+      issuer: http://localhost:8200/v1/identity/oidc
       audiences: [agentgateway]
       jwks:
-        url: http://vault:8200/v1/identity/oidc/provider/agentgateway/.well-known/keys
+        url: http://vault:8200/v1/identity/oidc/.well-known/keys
       jwtValidationOptions:
         requiredClaims: [exp, iss, aud, sub]
   models:

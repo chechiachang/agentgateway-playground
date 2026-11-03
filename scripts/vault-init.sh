@@ -62,17 +62,12 @@ vault write auth/oidc/role/agentgateway - <<EOF
 }
 EOF
 
-# Vault scopes become claims in ID tokens minted by this OIDC provider.
-# Keep these access values in lockstep with Agentgateway CEL allow rules.
+# Direct identity tokens use the identity OIDC issuer and keys endpoint.
+# Keep the access claim in lockstep with Agentgateway CEL allow rules.
 vault write identity/oidc/key/agentgateway \
   algorithm=RS256 allowed_client_ids=agentgateway
-vault write identity/oidc/role/agentgateway \
-  key=agentgateway client_id=agentgateway ttl=1h
-vault write identity/oidc/scope/agentgateway-access \
+vault write identity/oidc/role/agentgateway-access \
+  key=agentgateway client_id=agentgateway ttl=1h \
   template='{"access":"{{identity.entity.metadata.agentgateway_access}}"}'
-vault write identity/oidc/provider/agentgateway \
-  issuer="http://localhost:8200/v1/identity/oidc/provider/agentgateway" \
-  allowed_client_ids=agentgateway \
-  scopes_supported="openid,agentgateway-access"
 
 echo 'Vault browser OIDC auth and agentgateway JWT issuance configured.'

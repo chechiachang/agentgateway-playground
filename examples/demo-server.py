@@ -145,7 +145,10 @@ def research(url):
         if length and (not length.isdecimal() or int(length) > MAX_RESEARCH_BYTES):
             raise ValueError("response exceeds 65536 bytes")
         status = response.status
-        data = response.read(MAX_RESEARCH_BYTES + 1)
+        try:
+            data = response.read(MAX_RESEARCH_BYTES + 1)
+        except (OSError, TimeoutError) as error:
+            raise ValueError("public source could not be fetched") from error
     if len(data) > MAX_RESEARCH_BYTES:
         raise ValueError("response exceeds 65536 bytes")
     text = data.decode("utf-8", errors="replace")
@@ -210,11 +213,30 @@ def data_summary(data, fmt):
         summary = {"non_null": len(values), "missing": len(rows) - len(values), "distinct": len({json.dumps(v, sort_keys=True) for v in values})}
         if values and len(nums) == len(values):
             ordered = sorted(nums)
+            scale = max(abs(number) for number in nums)
+            if scale:
+                scaled_mean = math.fsum(number / scale for number in nums) / len(nums)
+                scaled_mean = min(max(scaled_mean, min(nums) / scale), max(nums) / scale)
+                mean = scale * scaled_mean
+            else:
+                mean = 0.0
+            middle = len(ordered) // 2
+            if len(ordered) % 2:
+                median = ordered[middle]
+            else:
+                lower, upper = ordered[middle - 1], ordered[middle]
+                median = (lower + upper) / 2 if lower < 0 < upper else lower + (upper - lower) / 2
             summary.update({"type": "numeric", "min": min(nums), "max": max(nums),
-                           "mean": sum(nums) / len(nums), "median": (ordered[(len(ordered)-1)//2] + ordered[len(ordered)//2]) / 2})
+                           "mean": mean, "median": median})
         else:
             summary["type"] = "categorical"
-            summary["top_values"] = sorted(((str(value), sum(v == value for v in values)) for value in set(values)), key=lambda pair: (-pair[1], pair[0]))[:5]
+            grouped = {}
+            for value in values:
+                key = json.dumps(value, sort_keys=True, ensure_ascii=False)
+                if key not in grouped:
+                    grouped[key] = [str(value), 0]
+                grouped[key][1] += 1
+            summary["top_values"] = sorted((tuple(item) for item in grouped.values()), key=lambda pair: (-pair[1], pair[0]))[:5]
         result["column_summaries"][column] = summary
     return result
 

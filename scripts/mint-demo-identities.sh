@@ -26,7 +26,8 @@ for spec in \
   'agents:data-analyst' \
   'agents:issue-triage' \
   'none'; do
-  create_identity "demo-${spec%%:*}" "$spec"
+  name=$(printf '%s' "$spec" | tr ':' '-')
+  create_identity "demo-$name" "$spec"
 done
 
 printf '%s\n' 'Entities registered. Use Vault identity/entity-alias or identity/entity-alias/id/<alias-id> to associate an authenticated OIDC identity with a specific entity; entity metadata is operator-controlled.'

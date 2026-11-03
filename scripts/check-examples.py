@@ -144,7 +144,7 @@ for name, text, expected in [
     ("calculator", "(12 + 8) * 3", {"value": 60}),
     ("text-analyst", "Hello from agentgateway", {"characters": 23, "words": 3, "lines": 1}),
     ("text-transformer", "agentgateway", {"text": "yawetagtnega"}),
-    ("research", json.dumps({"url": "https://www.iana.org/"}), None),
+    ("research", "https://www.iana.org/", None),
     ("data-analyst", json.dumps({"format": "csv", "data": "n\n1\n3\n"}), {"rows": 2}),
     ("issue-triage", "Deployment gateway crash", {"team": "platform"}),
 ]:
