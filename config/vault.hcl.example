@@ -1,6 +1,6 @@
 ui = true
 disable_mlock = true
 
-# Vault appends /v1/identity/oidc to this address to form the JWT issuer.
-# Keep it in sync with issuer in agentgateway.yaml (not the internal JWKS URL).
+# Vault appends /v1/identity/oidc/provider/<name> to this address for each
+# configured OIDC provider issuer. Keep it in sync with Agentgateway's issuer.
 api_addr = "http://localhost:8200"

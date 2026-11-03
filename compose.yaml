@@ -68,6 +68,22 @@ services:
       dex:
         condition: service_started
 
+  demo-tools-agents:
+    cap_drop: [ALL]
+    security_opt: ["no-new-privileges:true"]
+    build: ./examples
+    image: agentgateway-playground-examples:local
+    user: "65532:65532"
+    read_only: true
+    command: ["python", "-B", "/demo/demo-server.py"]
+    volumes:
+      - ./examples/demo-server.py:/demo/demo-server.py:ro
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8080/health', timeout=2)"]
+      interval: 2s
+      timeout: 3s
+      retries: 30
+
   agentgateway:
     cap_drop: [ALL]
     security_opt: ["no-new-privileges:true"]
@@ -90,5 +106,7 @@ services:
         bind:
           create_host_path: false
     depends_on:
+      demo-tools-agents:
+        condition: service_healthy
       vault-init:
         condition: service_completed_successfully

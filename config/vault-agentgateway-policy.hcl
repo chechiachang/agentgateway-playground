@@ -1,4 +1,5 @@
-# Authorized GitHub users may mint only the gateway audience's JWT.
-path "identity/oidc/token/agentgateway" {
+# This entity metadata is operator-controlled: users who can only log in/mint the
+# gateway audience's token cannot edit access grants or signing/provider config.
+path "identity/oidc/token/agentgateway-access" {
   capabilities = ["read"]
 }

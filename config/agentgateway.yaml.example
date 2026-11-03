@@ -71,3 +71,104 @@ llm:
       params:
         model: decision-1
         baseUrl: "$AZURE_OPENAI_BASE_URL"
+
+mcp:
+  gateways: [default]
+  prefixMode: always
+  policies:
+    jwtAuth: *vault-jwt
+    mcpAuthorization:
+      rules:
+        # MCP names are target-prefixed because prefixMode is always.
+        # Explicit allowlist; tools not listed here are inaccessible.
+        - allow: 'mcp.tool.name == "playground_calculate" && jwt.access == "tools:calculate"'
+        - allow: 'mcp.tool.name == "playground_text_stats" && jwt.access == "tools:text-stats"'
+        - allow: 'mcp.tool.name == "playground_reverse_text" && jwt.access == "tools:reverse-text"'
+  targets:
+    - name: playground
+      mcp:
+        host: demo-tools-agents
+        port: 8080
+        path: /mcp
+
+routes:
+  - name: calculator-agent
+    gateways: [default]
+    matches:
+      - path:
+          pathPrefix: /agents/calculator
+    policies:
+      jwtAuth: *vault-jwt
+      authorization:
+        rules:
+          - allow: 'jwt.access == "agents:calculator"'
+      a2a: {}
+    backends:
+      - host: demo-tools-agents:8080
+  - name: text-analyst-agent
+    gateways: [default]
+    matches:
+      - path:
+          pathPrefix: /agents/text-analyst
+    policies:
+      jwtAuth: *vault-jwt
+      authorization:
+        rules:
+          - allow: 'jwt.access == "agents:text-analyst"'
+      a2a: {}
+    backends:
+      - host: demo-tools-agents:8080
+
+  - name: text-transformer-agent
+    gateways: [default]
+    matches:
+      - path:
+          pathPrefix: /agents/text-transformer
+    policies:
+      jwtAuth: *vault-jwt
+      authorization:
+        rules:
+          - allow: 'jwt.access == "agents:text-transformer"'
+      a2a: {}
+    backends:
+      - host: demo-tools-agents:8080
+
+  - name: research-agent
+    gateways: [default]
+    matches:
+      - path:
+          pathPrefix: /agents/research
+    policies:
+      jwtAuth: *vault-jwt
+      authorization:
+        rules:
+          - allow: 'jwt.access == "agents:research"'
+      a2a: {}
+    backends:
+      - host: demo-tools-agents:8080
+  - name: data-analyst-agent
+    gateways: [default]
+    matches:
+      - path:
+          pathPrefix: /agents/data-analyst
+    policies:
+      jwtAuth: *vault-jwt
+      authorization:
+        rules:
+          - allow: 'jwt.access == "agents:data-analyst"'
+      a2a: {}
+    backends:
+      - host: demo-tools-agents:8080
+  - name: issue-triage-agent
+    gateways: [default]
+    matches:
+      - path:
+          pathPrefix: /agents/issue-triage
+    policies:
+      jwtAuth: *vault-jwt
+      authorization:
+        rules:
+          - allow: 'jwt.access == "agents:issue-triage"'
+      a2a: {}
+    backends:
+      - host: demo-tools-agents:8080

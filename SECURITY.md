@@ -20,5 +20,6 @@ After upgrading an existing checkout, run `make setup`, then `docker compose up 
 | Vault 2.2.1 | 2 | 0 |
 | Dex 2.46.1 | 22 | 0 |
 | Agentgateway 1.7.0 | 0 | 0 |
+| Example runtime (stdlib-only Python) | 0 | 0 |
 
 Vault includes `CVE-2026-116587` in go-jose v3/v4 (crafted JWK RSA parameters can cause denial of service). Dex includes the same CVE plus dependency findings, mostly in the unused gomplate binary; CI intentionally scans the entire image. Requested Vault/Agentgateway versions are retained. `.trivyignore.yaml` temporarily ignores these image CVEs until 2026-11-16 (then CI fails again);  repository secrets and Compose checks passed.
