@@ -20,7 +20,9 @@ jobs:
         with:
           persist-credentials: false
       - name: Prepare Compose environment
-        run: cp .env.example .env
+        run: |
+          cp .env.example .env
+          python3 scripts/setup-env.py
       - name: Validate Compose configuration
         run: docker compose config --quiet
       - name: Build Compose services
