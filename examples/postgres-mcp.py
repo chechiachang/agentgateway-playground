@@ -75,7 +75,7 @@ def _sql_tokens(query):
             identifier = "".join(identifier)
             if unicode_identifier:
                 escape = "\\"
-                clause = re.match(r"\s+UESCAPE\s+'((?:''|[^'])*)'", query[index:], re.I)
+                clause = re.match(r"\s+UESCAPE\s+'([^']*)'", query[index:], re.I)
                 if clause:
                     escape = clause.group(1).replace("''", "'")
                     index += clause.end()
