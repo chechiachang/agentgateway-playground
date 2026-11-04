@@ -68,6 +68,6 @@ vault write identity/oidc/key/agentgateway \
   algorithm=RS256 allowed_client_ids=agentgateway
 vault write identity/oidc/role/agentgateway-access \
   key=agentgateway client_id=agentgateway ttl=1h \
-  template='{"access":"{{identity.entity.metadata.agentgateway_access}}"}'
+  template='{"access":{{identity.entity.metadata.agentgateway_access}}}'
 
 echo 'Vault browser OIDC auth and agentgateway JWT issuance configured.'

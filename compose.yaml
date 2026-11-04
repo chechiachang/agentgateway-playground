@@ -2,7 +2,7 @@ services:
   postgres:
     cap_drop: [ALL]
     security_opt: ["no-new-privileges:true"]
-    image: postgres:17-alpine
+    image: postgres:18.6
     user: "postgres"
     environment:
       POSTGRES_DB: agentdb
@@ -10,7 +10,7 @@ services:
       POSTGRES_PASSWORD: ${POSTGRES_ADMIN_PASSWORD:?Run make setup}
       MCP_DB_PASSWORD: ${MCP_DB_PASSWORD:?Run make setup}
     volumes:
-      - postgres-data:/var/lib/postgresql/data
+      - postgres-data:/var/lib/postgresql
       - ./examples/postgres-init.sh:/docker-entrypoint-initdb.d/10-mcp-reader.sh:ro
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U postgres -d agentdb"]
@@ -132,6 +132,7 @@ services:
     environment:
       AZURE_OPENAI_BASE_URL: ${AZURE_OPENAI_BASE_URL:?Set AZURE_OPENAI_BASE_URL in .env}
       AZURE_OPENAI_API_KEY: ${AZURE_OPENAI_API_KEY:-}
+      AGENTGATEWAY_DATABASE_URL: ${AGENTGATEWAY_DATABASE_URL:-}
       GITHUB_USER: ${GITHUB_USER}
       DEX_AGENTGATEWAY_CLIENT_SECRET: ${DEX_AGENTGATEWAY_CLIENT_SECRET}
       AGENTGATEWAY_SESSION_KEY: ${AGENTGATEWAY_SESSION_KEY:?Set a 64-character hex session key in .env}
