@@ -15,6 +15,12 @@ for name in "$GITHUB_ORG" "$GITHUB_USER"; do
   esac
 done
 
+# Team slugs are configuration, not asserted membership; Dex verifies membership.
+case "${GITHUB_TEAMS:-}" in
+  ,*|*,|*,,*|*[!A-Za-z0-9,-]*)
+    echo 'GITHUB_TEAMS must be comma-separated GitHub team slugs.' >&2; exit 1 ;;
+esac
+
 vault policy write agentgateway /demo/vault-agentgateway-policy.hcl
 # Authenticated demo users can generate signed JWTs from their already-bound
 # Vault identity; they receive no configuration or entity-metadata write grant.
@@ -50,7 +56,9 @@ vault write auth/oidc/role/agentgateway - <<EOF
   "user_claim": "sub",
   "bound_audiences": ["vault"],
   "bound_claims": {"preferred_username": "$GITHUB_USER"},
-  "oidc_scopes": ["profile", "email"],
+  "claim_mappings": {"preferred_username": "username"},
+  "oidc_scopes": ["profile", "email", "groups"],
+  "groups_claim": "groups",
   "allowed_redirect_uris": [
     "http://localhost:8250/oidc/callback",
     "http://localhost:8200/ui/vault/auth/oidc/oidc/callback"
@@ -62,12 +70,39 @@ vault write auth/oidc/role/agentgateway - <<EOF
 }
 EOF
 
+# Vault only resolves upstream groups with a pre-provisioned external group alias.
+# No policies or MCP/A2A access grants are attached to these informational groups.
+oidc_accessor=$(vault read -field=accessor sys/auth/oidc)
+saved_ifs=$IFS
+IFS=,
+for team in ${GITHUB_TEAMS:-}; do
+  group_name="$GITHUB_ORG:$team"
+  if ! group_id=$(vault read -field=id "identity/group/name/$group_name" 2>/dev/null); then
+    group_id=$(vault write -field=id identity/group name="$group_name" type=external)
+  fi
+  group_type=$(vault read -field=type "identity/group/id/$group_id")
+  if [ "$group_type" != external ]; then
+    echo "Expected external Vault group: $group_name" >&2; exit 1
+  fi
+  alias_id=$(vault read -field=alias -format=json "identity/group/id/$group_id" |
+    sed -n 's/.*"id": "\([^"]*\)".*/\1/p')
+  alias_path=identity/group-alias
+  if [ -n "$alias_id" ]; then
+    alias_path="$alias_path/id/$alias_id"
+  fi
+  vault write "$alias_path" name="$group_name" \
+    mount_accessor="$oidc_accessor" canonical_id="$group_id" >/dev/null
+done
+IFS=$saved_ifs
+
 # Direct identity tokens use the identity OIDC issuer and keys endpoint.
 # Keep the access claim in lockstep with Agentgateway CEL allow rules.
 vault write identity/oidc/key/agentgateway \
   algorithm=RS256 allowed_client_ids=agentgateway
+oidc_jwt_template=$(sed "s/OIDC_MOUNT_ACCESSOR/$oidc_accessor/g" \
+  /demo/vault-jwt-template.json)
 vault write identity/oidc/role/agentgateway-access \
   key=agentgateway client_id=agentgateway ttl=1h \
-  template='{"access":{{identity.entity.metadata.agentgateway_access}}}'
+  template="$oidc_jwt_template"
 
 echo 'Vault browser OIDC auth and agentgateway JWT issuance configured.'

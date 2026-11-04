@@ -1,6 +1,4 @@
 .env
 .env.*
 !.env.example
-config/agentgateway.yaml
-config/vault.hcl
-config/dex.yaml
+data/model-catalog/

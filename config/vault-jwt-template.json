@@ -1,0 +1,5 @@
+{
+  "username": {{identity.entity.aliases.OIDC_MOUNT_ACCESSOR.metadata.username}},
+  "access": {{identity.entity.metadata.agentgateway_access}},
+  "groups": {{identity.entity.groups.names}}
+}

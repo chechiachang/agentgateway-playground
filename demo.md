@@ -21,7 +21,7 @@ Wait until Vault, PostgreSQL, `postgres-mcp`, and `demo-tools-agents` are health
 
 ## 2. Sign in and check the UI
 
-Run in one shell: `eval` applies the `export JWT='…'` output so commands can use `$JWT`.
+Run in one shell: login opens your browser automatically; `eval` applies the `export JWT='…'` output so commands can use `$JWT`. If the browser cannot open, use the printed link.
 
 ```sh
 eval "$(make login)"
@@ -29,19 +29,50 @@ eval "$(make login)"
 
 Open <http://localhost:4000/ui>, choose **Sign in with SSO**, and sign in with the configured GitHub account. The gateway checks organization membership and the configured username. Visit **Models** at <http://localhost:4000/ui/llm/models> to see `gpt-6-luna`, `gpt-6.1-sol`, `text-embedding-3-large`, and `decision-1`.
 
-## 3. Exercise authenticated model routes
+### Include GitHub teams in JWT
 
-Codex calls Agentgateway's authenticated Responses API using `JWT`; inference uses Azure quota.
+Set `GITHUB_TEAMS=platform,security` in `.env` once (your team slugs); startup registers Vault aliases, and `groups` lists only memberships verified by Dex as `ORG:TEAM`. These groups grant no MCP/A2A access. Older `config/dex.yaml` files need `teamNameField: slug` under the GitHub connector's `config`.
 
 ```sh
-eval "$(make jwt)"  # run make login instead if the Vault session expired
-codex -m gpt-6-luna \
-  -c 'model_provider="agw"' \
-  -c 'model_providers.agw={name="Agentgateway",base_url="http://localhost:4000/v1",env_key="JWT",wire_api="responses",requires_openai_auth=false}' \
-  'Reply with hello from Agentgateway; do not use tools.'
+docker compose up -d --no-deps --force-recreate dex vault-init
+eval "$(make login)"
+part=$(printf '%s' "$JWT" | cut -d. -f2)
+case $((${#part} % 4)) in
+  2) part="$part==" ;;
+  3) part="$part=" ;;
+esac
+printf '%s' "$part" | tr '_-' '/+' | openssl base64 -d -A | jq .
 ```
 
-Alternatively, merge [examples/codex-config.toml](examples/codex-config.toml) into `~/.codex/config.toml`, then run `codex` in the shell with `JWT` set; `--config` takes key/value overrides, not a file path. Use `-m gpt-6.1-sol` for the other Codex model.
+The JWT template is [config/vault-jwt-template.json](config/vault-jwt-template.json). Vault dev storage resets on restart; Compose reapplies this configuration automatically. Team membership changes require a fresh login.
+
+## 3. Exercise authenticated model routes
+
+Test a model request with the Vault JWT from step 2; inference uses Azure quota:
+
+```sh
+curl -sS http://localhost:4000/v1/chat/completions \
+  -H "Authorization: Bearer $JWT" \
+  -H 'Content-Type: application/json' \
+  -d '{"model":"gpt-6-luna","messages":[{"role":"user","content":"Reply with exactly OK."}],"stream":false}'
+```
+
+Or test with the local API key, without a JWT:
+
+```sh
+curl -sS http://localhost:4000/v1/chat/completions \
+  -H 'x-api-key: test' \
+  -H 'Content-Type: application/json' \
+  -d '{"model":"gpt-6-luna","messages":[{"role":"user","content":"Reply with exactly OK."}],"stream":false}'
+```
+
+Codex calls Agentgateway's authenticated Responses API using `JWT`.
+
+```sh
+make codex  # run make login first if the Vault session expired
+```
+
+Use `make codex CODEX_MODEL=gpt-6.1-sol` for the other model. Alternatively, merge [examples/codex-config.toml](examples/codex-config.toml) into `~/.codex/config.toml`, then run `codex` in the shell with `JWT` set; `--config` takes key/value overrides, not a file path.
 
 Check auth, chat, embeddings, and native SystemOne separately:
 
@@ -51,6 +82,44 @@ sh scripts/check-models.sh
 sh scripts/check-models.sh path/to/systemone-request.json  # optional custom payload
 ```
 
+## Security: authentication and model guardrails
+
+Authentication identifies the caller; authorization decides which routes/tools they may use; guardrails inspect model content. Policies are in [config/agentgateway.yaml](config/agentgateway.yaml).
+
+| Credential | Header | Access |
+|---|---|---|
+| Vault JWT from step 2 | `Authorization: Bearer $JWT` | Model APIs; gateway verifies signature, issuer, `agentgateway` audience, expiry, and required identity claims |
+| Local demo API key | `x-api-key: test` or `x-api-key: test-ratelimit` | Model APIs only; keys map to separate usernames and rate-limit budgets |
+| Scoped Vault JWT | `Authorization: Bearer $JWT` | MCP/A2A only when its signed `access` claim matches the tool/route allowlist |
+
+Model APIs accept either a valid JWT or a configured API key; neither credential means access is denied. Browser SSO is separate from API authentication. The simple API keys are public demo credentials, not deployment secrets.
+
+### Opt-in model guardrails
+
+| Model names | Content policy |
+|---|---|
+| `gpt-6-luna`, `gpt-6.1-sol` | No demo content guards; use for normal Codex sessions |
+| `gpt-6-luna-guarded`, `gpt-6.1-sol-guarded` | Same providers, with strict local SSN and `AGW_DEMO_SECRET_[A-Z0-9]+` detection |
+
+Guarded models reject matching input with HTTP `403`, mask matching non-streaming output, and block matching streaming windows with an SSE error. They scan system prompts, conversation history, tool results, and tool arguments—not only the latest prompt. Quoted examples can therefore block Codex resume; use normal models when working on these examples. Authentication and rate limits still apply to all models.
+
+Demonstrate rejection with an API key (no model inference/quota is used):
+
+```sh
+curl -i http://localhost:4000/v1/chat/completions \
+  -H 'x-api-key: test' \
+  -H 'Content-Type: application/json' \
+  -d '{"model":"gpt-6-luna-guarded","messages":[{"role":"user","content":"Use this credential: AGW_DEMO_SECRET_123ABC"}],"stream":false}'
+```
+
+Expect `403 Forbidden` with `Guardrail rejected sensitive input.` To use JWT authentication instead, replace the API-key header with `-H "Authorization: Bearer $JWT"`. The prompt `My SSN is 123-45-6789` also triggers rejection.
+
+```sh
+python3 scripts/check-guardrails.py  # both guarded models; chat and Responses history
+```
+
+These patterns are a demonstration, not a complete sensitive-data or prompt-injection defense. Streaming checks cannot retract already-delivered output.
+
 ## 4. Demonstrate MCP tools
 
 The playground needs a one-hour, tool-scoped Vault JWT; browser SSO and the normal model JWT grant no MCP tools.
@@ -59,8 +128,13 @@ The playground needs a one-hour, tool-scoped Vault JWT; browser SSO and the norm
 mint_jwt() {
   docker compose exec -T vault sh -ec '
     export VAULT_TOKEN="$VAULT_DEV_ROOT_TOKEN_ID"
-    entity_id=$(vault write -field=id identity/entity name="demo-${1%%:*}-${1#*:}" metadata="agentgateway_access=$1")
-    VAULT_TOKEN=$(vault token create -entity-id="$entity_id" -policy=agentgateway-login -ttl=1h -field=token)
+    name="demo-${1%%:*}-${1#*:}"
+    vault write identity/entity name="$name" metadata="agentgateway_access=$1" >/dev/null
+    entity_id=$(vault read -field=id "identity/entity/name/$name")
+    accessor=$(vault read -field=accessor sys/auth/token)
+    vault write identity/entity-alias name="$name" canonical_id="$entity_id" mount_accessor="$accessor" >/dev/null
+    vault write "auth/token/roles/$name" allowed_entity_aliases="$name" allowed_policies=agentgateway-login token_explicit_max_ttl=1h >/dev/null
+    VAULT_TOKEN=$(vault token create -role="$name" -entity-alias="$name" -policy=agentgateway-login -no-default-policy -ttl=1h -field=token)
     export VAULT_TOKEN
     vault read -field=token identity/oidc/token/agentgateway-access
   ' sh "$1"
@@ -112,15 +186,20 @@ The demo database starts without sample tables. Add data using a trusted databas
 
 ## 6. Call A2A agents
 
-Agent cards are available at `/agents/<name>/.well-known/agent-card.json`; messages use A2A JSON-RPC `message/send`. For example, with an identity granted only `agents:calculator`:
+The `demo-tools-agents` service hosts six deterministic agents, not a kagent controller; use HTTP card discovery and `message/send` ([kagent A2A example](https://kagent.dev/docs/kagent/1.x/examples/a2a-agents/)), with section 4's helper:
 
 ```sh
 export JWT="$(mint_jwt agents:calculator)"
+curl -sS http://localhost:4000/agents/calculator/.well-known/agent-card.json \
+  -H "Authorization: Bearer $JWT"
+
 curl -sS http://localhost:4000/agents/calculator \
   -H "Authorization: Bearer $JWT" \
   -H 'Content-Type: application/json' \
   --data '{"jsonrpc":"2.0","id":1,"method":"message/send","params":{"message":{"kind":"message","role":"user","messageId":"demo-1","parts":[{"kind":"text","text":"(12 + 8) * 3"}]}}}'
 ```
+
+Expect an agent message containing `{"value":60}`. Unlike kagent's controller, these demos have no gRPC, streaming, persisted sessions/tasks, or human-in-the-loop support. Routes and exact-access authorization are defined in [config/agentgateway.yaml](config/agentgateway.yaml); restart Agentgateway after changing it.
 
 For each agent, set `export JWT="$(mint_jwt agents:NAME)"`, replace the URL's agent name, and use its input:
 

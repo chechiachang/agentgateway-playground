@@ -14,7 +14,7 @@ spec.loader.exec_module(setup)
 
 with tempfile.TemporaryDirectory() as temporary:
     root = Path(temporary)
-    shutil.copytree(ROOT / "config", root / "config", ignore=shutil.ignore_patterns("*.yaml", "vault.hcl"))
+    shutil.copytree(ROOT / "config", root / "config", ignore=shutil.ignore_patterns("dex.yaml", "vault.hcl", "*.backup-*"))
     shutil.copyfile(ROOT / ".env.example", root / ".env.example")
     shutil.copyfile(ROOT / "compose.yaml", root / "compose.yaml")
     setup.setup(root)
@@ -32,7 +32,7 @@ with tempfile.TemporaryDirectory() as temporary:
             if volume.get("type") == "volume":
                 continue  # PostgreSQL data volume must be writable; bind mounts remain read-only.
             assert volume.get("read_only"), name
-    assert set(services["vault-init"]["environment"]) == {"VAULT_ADDR", "VAULT_TOKEN", "GITHUB_ORG", "GITHUB_USER", "DEX_VAULT_CLIENT_SECRET"}
+    assert set(services["vault-init"]["environment"]) == {"VAULT_ADDR", "VAULT_TOKEN", "GITHUB_ORG", "GITHUB_USER", "GITHUB_TEAMS", "DEX_VAULT_CLIENT_SECRET"}
     assert services["postgres"].get("ports", []) == []
     assert services["postgres-mcp"].get("ports", []) == []
     assert services["postgres-mcp"]["environment"]["DATABASE_URL"].startswith("postgres://mcp_reader:")

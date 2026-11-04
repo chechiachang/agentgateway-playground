@@ -1,6 +1,0 @@
-ui = true
-disable_mlock = true
-
-# Vault appends /v1/identity/oidc/provider/<name> to this address for each
-# configured OIDC provider issuer. Keep it in sync with Agentgateway's issuer.
-api_addr = "http://localhost:8200"

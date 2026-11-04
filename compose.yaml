@@ -98,10 +98,12 @@ services:
       VAULT_TOKEN: ${VAULT_DEV_ROOT_TOKEN_ID}
       GITHUB_ORG: ${GITHUB_ORG}
       GITHUB_USER: ${GITHUB_USER}
+      GITHUB_TEAMS: ${GITHUB_TEAMS:-}
       DEX_VAULT_CLIENT_SECRET: ${DEX_VAULT_CLIENT_SECRET}
     volumes:
       - ./scripts/vault-init.sh:/demo/vault-init.sh:ro
       - ./config/vault-agentgateway-policy.hcl:/demo/vault-agentgateway-policy.hcl:ro
+      - ./config/vault-jwt-template.json:/demo/vault-jwt-template.json:ro
     depends_on:
       vault:
         condition: service_healthy
@@ -124,6 +126,76 @@ services:
       timeout: 3s
       retries: 30
 
+  valkey:
+    cap_drop: [ALL]
+    security_opt: ["no-new-privileges:true"]
+    image: valkey/valkey:8
+    # Skip the root entrypoint's ownership scan; persisted files belong to valkey.
+    user: "999:999"
+    command: ["valkey-server", "--appendonly", "yes"]
+    volumes:
+      - valkey-data:/data
+    healthcheck:
+      test: ["CMD", "valkey-cli", "ping"]
+      interval: 2s
+      timeout: 3s
+      retries: 30
+
+  ratelimit:
+    cap_drop: [ALL]
+    security_opt: ["no-new-privileges:true"]
+    image: envoyproxy/ratelimit:8fe6ea42
+    environment:
+      REDIS_SOCKET_TYPE: tcp
+      REDIS_URL: valkey:6379
+      RUNTIME_ROOT: /data
+      RUNTIME_SUBDIRECTORY: ratelimit
+      RUNTIME_WATCH_ROOT: "false"
+      USE_STATSD: "false"
+      LOG_LEVEL: info
+    volumes:
+      - type: bind
+        source: ./config/ratelimit.yaml
+        target: /data/ratelimit/config/config.yaml
+        read_only: true
+        bind:
+          create_host_path: false
+    depends_on:
+      valkey:
+        condition: service_healthy
+
+  codex-agent:
+    profiles: [coder]
+    cap_drop: [ALL]
+    security_opt: ["no-new-privileges:true"]
+    build:
+      context: ./examples
+      dockerfile: codex/Dockerfile
+    image: agentgateway-playground-codex:local
+    init: true
+    user: "1000:1000"
+    read_only: true
+    environment:
+      CODEX_AGENT_HOST: 0.0.0.0
+      CODEX_AGENT_TOKEN: ${CODEX_AGENT_TOKEN:?Run make setup}
+      CODEX_WORKSPACE: /workspace
+      CODEX_MODEL: ${CODEX_MODEL:-gpt-6-luna}
+      CODEX_MODEL_BASE_URL: http://agentgateway:4000/v1
+      CODEX_MODEL_API_KEY: ${CODEX_MODEL_API_KEY:-test}
+    volumes:
+      - ${CODEX_WORKSPACE:-.}:/workspace
+      - codex-state:/home/node/.codex
+    tmpfs:
+      - /tmp:uid=1000,gid=1000,mode=1777
+    healthcheck:
+      test: ["CMD", "python3", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8082/health', timeout=2)"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+    depends_on:
+      agentgateway:
+        condition: service_started
+
   agentgateway:
     cap_drop: [ALL]
     security_opt: ["no-new-privileges:true"]
@@ -137,12 +209,22 @@ services:
       DEX_AGENTGATEWAY_CLIENT_SECRET: ${DEX_AGENTGATEWAY_CLIENT_SECRET}
       AGENTGATEWAY_SESSION_KEY: ${AGENTGATEWAY_SESSION_KEY:?Set a 64-character hex session key in .env}
       OIDC_COOKIE_SECRET: ${OIDC_COOKIE_SECRET:?Run make setup}
+      CODEX_AGENT_TOKEN: ${CODEX_AGENT_TOKEN:?Run make setup}
+      CODEX_AGENT_BACKEND: ${CODEX_AGENT_BACKEND:-codex-agent:8082}
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
     ports:
       - "127.0.0.1:4000:4000"
     volumes:
       - type: bind
         source: ./config/agentgateway.yaml
         target: /config/config.yaml
+        read_only: true
+        bind:
+          create_host_path: false
+      - type: bind
+        source: ./data/model-catalog
+        target: /config/costs
         read_only: true
         bind:
           create_host_path: false
@@ -153,6 +235,12 @@ services:
         condition: service_healthy
       vault-init:
         condition: service_completed_successfully
+      valkey:
+        condition: service_healthy
+      ratelimit:
+        condition: service_started
 
 volumes:
   postgres-data:
+  valkey-data:
+  codex-state:

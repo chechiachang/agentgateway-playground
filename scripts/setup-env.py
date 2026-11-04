@@ -9,7 +9,7 @@ ROOT = Path(__file__).resolve().parent.parent
 KEYS = {
     "VAULT_DEV_ROOT_TOKEN_ID", "DEX_VAULT_CLIENT_SECRET",
     "DEX_AGENTGATEWAY_CLIENT_SECRET", "AGENTGATEWAY_SESSION_KEY",
-    "OIDC_COOKIE_SECRET", "POSTGRES_ADMIN_PASSWORD", "MCP_DB_PASSWORD",
+    "OIDC_COOKIE_SECRET", "POSTGRES_ADMIN_PASSWORD", "MCP_DB_PASSWORD", "CODEX_AGENT_TOKEN",
 }
 PUBLIC_DEFAULTS = {
     "demo-root-token", "demo-vault-oidc-client-secret",
@@ -43,7 +43,8 @@ def setup(root):
     finally:
         if os.path.exists(temporary):
             os.unlink(temporary)
-    for name in ("agentgateway.yaml", "dex.yaml", "vault.hcl"):
+    # Agentgateway config is tracked directly; only private local configs are copied.
+    for name in ("dex.yaml", "vault.hcl"):
         destination = root / "config" / name
         if not destination.exists():
             destination.write_bytes(destination.with_suffix(destination.suffix + ".example").read_bytes())
