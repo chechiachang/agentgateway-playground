@@ -10,4 +10,18 @@ psql -v ON_ERROR_STOP=1 --username "$POSTGRES_USER" --dbname agentdb <<'SQL'
 GRANT USAGE ON SCHEMA public TO mcp_reader;
 GRANT SELECT ON ALL TABLES IN SCHEMA public TO mcp_reader;
 ALTER DEFAULT PRIVILEGES FOR ROLE postgres IN SCHEMA public GRANT SELECT ON TABLES TO mcp_reader;
+DO $$
+DECLARE
+    target regprocedure;
+BEGIN
+    FOR target IN
+        SELECT oid::regprocedure
+        FROM pg_proc
+        WHERE pronamespace = 'pg_catalog'::regnamespace
+          AND proname IN ('pg_cancel_backend', 'pg_terminate_backend')
+    LOOP
+        EXECUTE format('REVOKE EXECUTE ON FUNCTION %s FROM PUBLIC', target);
+    END LOOP;
+END
+$$;
 SQL

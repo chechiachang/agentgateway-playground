@@ -15,6 +15,7 @@ except ImportError:  # SQL validation tests can run without the container driver
 MAX_ROWS = 200
 MAX_SQL_CHARS = 8000
 FORBIDDEN = re.compile(r"\b(insert|update|delete|merge|create|alter|drop|truncate|grant|revoke|copy|call|do|vacuum|refresh|comment|set|reset|discard|listen|notify|prepare|execute|deallocate)\b", re.I)
+UNSAFE_FUNCTIONS = {"pg_sleep", "pg_read_file", "pg_read_binary_file", "pg_ls_dir", "lo_import", "lo_export", "dblink"}
 TOOLS = [
     {"name": "postgres_list_tables", "description": "List accessible tables in the public schema.", "inputSchema": {"type": "object", "properties": {}, "additionalProperties": False}},
     {"name": "postgres_describe_table", "description": "Describe columns for a public-schema table.", "inputSchema": {"type": "object", "properties": {"table": {"type": "string", "maxLength": 63}}, "required": ["table"], "additionalProperties": False}},
@@ -22,17 +23,109 @@ TOOLS = [
 ]
 
 
+def _sql_tokens(query):
+    """Tokenize identifiers and statement punctuation without interpreting string contents."""
+    tokens = []
+    index = 0
+    while index < len(query):
+        char = query[index]
+        if char.isspace():
+            index += 1
+        elif query.startswith(("--", "/*"), index):
+            raise ValueError("SQL comments are not allowed")
+        elif char == "'":
+            escaped_string = index > 0 and query[index - 1] in "eE" and (index < 2 or not (query[index - 2].isalnum() or query[index - 2] in "_$"))
+            index += 1
+            while index < len(query):
+                if escaped_string and query[index] == "\\":
+                    index += 2
+                elif query[index] == "'" and index + 1 < len(query) and query[index + 1] == "'":
+                    index += 2
+                elif query[index] == "'":
+                    index += 1
+                    break
+                else:
+                    index += 1
+            tokens.append(("literal", ""))
+        elif query.startswith("$", index):
+            delimiter = re.match(r"\$(?:[a-zA-Z_][a-zA-Z0-9_]*)?\$", query[index:])
+            if delimiter:
+                marker = delimiter.group()
+                end = query.find(marker, index + len(marker))
+                if end >= 0:
+                    index = end + len(marker)
+                    tokens.append(("literal", ""))
+                    continue
+            tokens.append(("symbol", char))
+            index += 1
+        elif char == '"' or query[index:index + 3].lower() == 'u&"':
+            unicode_identifier = char != '"'
+            index += 3 if unicode_identifier else 1
+            identifier = []
+            while index < len(query):
+                if query[index] == '"' and index + 1 < len(query) and query[index + 1] == '"':
+                    identifier.append('"')
+                    index += 2
+                elif query[index] == '"':
+                    index += 1
+                    break
+                else:
+                    identifier.append(query[index])
+                    index += 1
+            identifier = "".join(identifier)
+            if unicode_identifier:
+                escape = "\\"
+                clause = re.match(r"\s+UESCAPE\s+'((?:''|[^'])*)'", query[index:], re.I)
+                if clause:
+                    escape = clause.group(1).replace("''", "'")
+                    index += clause.end()
+                decoded = []
+                pos = 0
+                while pos < len(identifier):
+                    if identifier[pos] != escape or pos + 1 >= len(identifier):
+                        decoded.append(identifier[pos])
+                        pos += 1
+                    elif identifier[pos + 1] == escape:
+                        decoded.append(escape)
+                        pos += 2
+                    else:
+                        start = pos + 2 if identifier[pos + 1] == "+" else pos + 1
+                        digits = 6 if start != pos + 1 else 4
+                        codepoint = identifier[start:start + digits]
+                        try:
+                            decoded.append(chr(int(codepoint, 16)))
+                            pos = start + digits
+                        except (ValueError, OverflowError):
+                            decoded.extend(identifier[pos:pos + 2])
+                            pos += 2
+                identifier = "".join(decoded)
+            tokens.append(("identifier", identifier.lower()))
+        elif char.isalpha() or char == "_" or ord(char) >= 128:
+            end = index + 1
+            while end < len(query) and (query[end].isalnum() or query[end] in "_$" or ord(query[end]) >= 128):
+                end += 1
+            tokens.append(("identifier", query[index:end].lower()))
+            index = end
+        else:
+            if char == ";":
+                raise ValueError("only a single SELECT statement is allowed")
+            tokens.append(("symbol", char))
+            index += 1
+    return tokens
+
+
 def readonly_query(sql):
     """Conservative syntax checks plus PostgreSQL read-only transaction and DB grants."""
     if not isinstance(sql, str) or len(sql) > MAX_SQL_CHARS:
         raise ValueError("sql must be a string no longer than 8000 characters")
     query = sql.strip()
-    if not re.match(r"(?is)^select\b", query) or ";" in query or "--" in query or "/*" in query or "*/" in query or FORBIDDEN.search(query) or re.search(r"(?is)\bpg_[a-z0-9_]+\s*\(", query):
+    tokens = _sql_tokens(query)
+    if not re.match(r"(?is)^select\b", query) or FORBIDDEN.search(query):
         raise ValueError("only a single SELECT statement is allowed")
+    if any(kind == "identifier" and (value.startswith("pg_") or value in UNSAFE_FUNCTIONS) and index + 1 < len(tokens) and tokens[index + 1] == ("symbol", "(") for index, (kind, value) in enumerate(tokens)):
+        raise ValueError("unsafe PostgreSQL function is not allowed")
     if re.search(r"(?is)\b(into|for\s+(update|share|no\s+key\s+update|key\s+share))\b", query):
         raise ValueError("SELECT INTO and row-locking clauses are not allowed")
-    if re.search(r"(?is)\b(pg_sleep|pg_read_file|pg_read_binary_file|pg_ls_dir|lo_import|lo_export|dblink)\s*\(", query):
-        raise ValueError("unsafe PostgreSQL function is not allowed")
     return query
 
 

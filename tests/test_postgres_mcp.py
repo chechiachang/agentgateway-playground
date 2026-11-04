@@ -17,6 +17,18 @@ class ReadOnlySqlTests(unittest.TestCase):
             with self.subTest(query=query), self.assertRaises(ValueError):
                 server.readonly_query(query)
 
+    def test_rejects_quoted_and_unicode_escaped_unsafe_functions(self):
+        for query in (
+            'SELECT "pg_terminate_backend"(123)',
+            'SELECT pg_catalog."pg_terminate_backend"(123)',
+            'SELECT U&"pg\\005fterminate_backend"(123)',
+        ):
+            with self.subTest(query=query), self.assertRaises(ValueError):
+                server.readonly_query(query)
+
+    def test_ignores_function_like_text_in_string_literals(self):
+        self.assertEqual(server.readonly_query("SELECT 'pg_terminate_backend('"), "SELECT 'pg_terminate_backend('")
+
     def test_query_length(self):
         with self.assertRaises(ValueError):
             server.readonly_query("SELECT " + " " * server.MAX_SQL_CHARS)
