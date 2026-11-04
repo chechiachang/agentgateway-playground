@@ -3,6 +3,7 @@ services:
     cap_drop: [ALL]
     security_opt: ["no-new-privileges:true"]
     image: postgres:17-alpine
+    user: "postgres"
     environment:
       POSTGRES_DB: agentdb
       POSTGRES_USER: postgres

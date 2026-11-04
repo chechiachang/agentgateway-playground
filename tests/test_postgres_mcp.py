@@ -1,4 +1,5 @@
 import importlib.util
+from unittest.mock import MagicMock, patch
 from pathlib import Path
 import unittest
 
@@ -23,6 +24,19 @@ class ReadOnlySqlTests(unittest.TestCase):
     def test_unknown_tool_rejected(self):
         with self.assertRaises(ValueError):
             server.call_tool("not-a-tool", {})
+
+    def test_query_uses_supported_read_only_transaction_and_preserves_percent_signs(self):
+        for query in ("SELECT 10 % 3 AS value", "SELECT 'value' LIKE '%alue' AS matches"):
+            with self.subTest(query=query):
+                conn = MagicMock()
+                driver = MagicMock()
+                driver.connect.return_value.__enter__.return_value = conn
+                with patch.object(server, "psycopg", driver), patch.dict("os.environ", {"DATABASE_URL": "postgres://test"}):
+                    server.call_tool("postgres_query", {"sql": query})
+                conn.transaction.assert_called_once_with()
+                conn.execute.assert_called_once_with(
+                    f"SELECT * FROM ({query}) AS mcp_read_only_query LIMIT {server.MAX_ROWS}"
+                )
 
 
 if __name__ == "__main__":

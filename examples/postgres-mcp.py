@@ -42,7 +42,7 @@ def call_tool(name, args):
     if psycopg is None:
         raise RuntimeError("psycopg driver is not installed")
     with psycopg.connect(os.environ["DATABASE_URL"], connect_timeout=5, options="-c default_transaction_read_only=on -c statement_timeout=5000 -c lock_timeout=2000", row_factory=dict_row) as conn:
-        with conn.transaction(read_only=True):
+        with conn.transaction():
             if name == "postgres_list_tables":
                 rows = conn.execute("SELECT table_name FROM information_schema.tables WHERE table_schema = 'public' AND table_type = 'BASE TABLE' ORDER BY table_name").fetchall()
             elif name == "postgres_describe_table":
@@ -52,7 +52,7 @@ def call_tool(name, args):
                 rows = conn.execute("SELECT column_name, data_type, is_nullable FROM information_schema.columns WHERE table_schema = 'public' AND table_name = %s ORDER BY ordinal_position", (table,)).fetchall()
             elif name == "postgres_query":
                 query = readonly_query(args.get("sql"))
-                rows = conn.execute("SELECT * FROM (" + query + ") AS mcp_read_only_query LIMIT %s", (MAX_ROWS,)).fetchall()
+                rows = conn.execute("SELECT * FROM (" + query + f") AS mcp_read_only_query LIMIT {MAX_ROWS}").fetchall()
             else:
                 raise ValueError("unknown tool")
     return rows
