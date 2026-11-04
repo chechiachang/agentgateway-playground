@@ -91,6 +91,7 @@ The `agentgateway-access` Vault OIDC role template places the operator-controlle
 | Agent caller | `agents:research` | only `/agents/research` |
 | Agent caller | `agents:data-analyst` | only `/agents/data-analyst` |
 | Agent caller | `agents:issue-triage` | only `/agents/issue-triage` |
+| Coding caller | `agents:coder` | only `/agents/coder` (writable coding workspace) |
 | Deny test identity | unset or any unmatched value, e.g. `none` | no tools or agent routes |
 
 The existing local demo's GitHub-bound Vault identity is intentionally not given a tool/agent grant. For a real deployment, provision individual Vault entities and OIDC aliases under operator control (or use an established IdP that emits the same `access` claim), and decide grants from an authenticated administrative process. The helper creates isolated demonstration entities and prints their IDs; set entity metadata only with an operator token, then map/login as that entity:
@@ -137,6 +138,14 @@ codex -m gpt-6-luna \
 Alternatively, merge [the provider example](examples/codex-config.toml) into `~/.codex/config.toml`, then run `codex` after login. Provider/auth settings are not loaded from project config; `--config` accepts key/value overrides, not a file path.
 
 Dev-only. Restarting Vault resets sessions; inference uses Azure quota. [Security](SECURITY.md).
+
+### Codex coding agent
+
+```sh
+make coder  # optional Docker profile: pinned Codex CLI + local A2A adapter
+```
+
+Set `CODEX_WORKSPACE` in `.env` to the project to edit. `/agents/coder` requires a Vault JWT with `access=agents:coder`; the normal model JWT has no coder grant. Supports queued tasks, streamed progress, follow-ups, and cancellation. See [the agent list and delegation walkthrough](demo.md#delegate-a-job-to-coder) for commands and host mode.
 
 ### Specialist agents
 

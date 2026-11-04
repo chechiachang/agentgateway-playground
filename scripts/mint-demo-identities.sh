@@ -25,6 +25,7 @@ for spec in \
   'agents:research' \
   'agents:data-analyst' \
   'agents:issue-triage' \
+  'agents:coder' \
   'none'; do
   name=$(printf '%s' "$spec" | tr ':' '-')
   create_identity "demo-$name" "$spec"

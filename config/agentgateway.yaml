@@ -87,7 +87,7 @@ llm:
               value: 'jwt.username'
           type: tokens
           cost: 'math.round(llm.cost.total * 1000000.0).uint()'
-        # Give the `test` API key its own $10 monthly budget descriptor.
+        # Give the `test` API key its own 10 USD monthly budget descriptor.
         - entries:
             - key: api_key_cost_month
               value: 'apiKey != null ? apiKey.username : ""'

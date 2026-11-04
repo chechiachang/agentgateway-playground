@@ -177,6 +177,7 @@ services:
     read_only: true
     environment:
       CODEX_AGENT_HOST: 0.0.0.0
+      CODEX_AGENT_SANDBOX: container
       CODEX_AGENT_TOKEN: ${CODEX_AGENT_TOKEN:?Run make setup}
       CODEX_WORKSPACE: /workspace
       CODEX_MODEL: ${CODEX_MODEL:-gpt-6-luna}

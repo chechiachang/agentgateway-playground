@@ -31,7 +31,8 @@ class Codex:
         self.write_lock = threading.Lock()
         self.events = queue.Queue(maxsize=4096)
         self.sequence = 0
-        self.proc = subprocess.Popen(command, cwd=cwd, stdin=subprocess.PIPE,
+        environment = {key: value for key, value in os.environ.items() if key != "CODEX_AGENT_TOKEN"}
+        self.proc = subprocess.Popen(command, cwd=cwd, env=environment, stdin=subprocess.PIPE,
                                      stdout=subprocess.PIPE, stderr=None,
                                      text=True, encoding="utf-8", bufsize=1)
         self.reader = threading.Thread(target=self.read, daemon=True)
@@ -117,8 +118,9 @@ class Codex:
 
 class Agent:
     """One bounded queue serializes all changes to a fixed workspace."""
-    def __init__(self, codex, cwd, model, timeout=3600):
+    def __init__(self, codex, cwd, model, timeout=3600, external_sandbox=False):
         self.codex, self.cwd, self.model, self.timeout = codex, str(Path(cwd).resolve()), model, timeout
+        self.external_sandbox = external_sandbox
         self.condition = threading.Condition()
         self.tasks, self.contexts = {}, {}
         self.work = queue.Queue(maxsize=16)
@@ -209,6 +211,8 @@ class Agent:
                     self.update(task, "working")
                 self.execute(task)
             except Exception as error:
+                # Unexpected protocol errors may leave a turn running: fail closed.
+                self.codex.close()
                 self.update(task, "failed", str(error))
             finally:
                 self.work.task_done()
@@ -221,8 +225,12 @@ class Agent:
                 "approvalPolicy": "never", "sandbox": "workspace-write"})
             thread_id = result["thread"]["id"]
             self.contexts[context] = thread_id
-        turn = self.codex.call("turn/start", {"threadId": thread_id,
-            "input": [{"type": "text", "text": task["_text"]}]})["turn"]
+        turn_params = {"threadId": thread_id,
+            "input": [{"type": "text", "text": task["_text"]}]}
+        if self.external_sandbox:
+            # Docker enforces the filesystem/process boundary; do not nest bwrap.
+            turn_params["sandboxPolicy"] = {"type": "externalSandbox", "networkAccess": "enabled"}
+        turn = self.codex.call("turn/start", turn_params)["turn"]
         turn_id = turn["id"]
         deadline = time.monotonic() + self.timeout
         interrupt_deadline = None
@@ -317,7 +325,7 @@ class Handler(BaseHTTPRequestHandler):
 
     def authorized(self):
         tokens = self.headers.get_all("x-codex-agent-token", [])
-        if len(tokens) != 1 or not hmac.compare_digest(tokens[0], self.server.token):
+        if len(tokens) != 1 or not hmac.compare_digest(tokens[0].encode("utf-8"), self.server.token.encode("ascii")):
             self.close_connection = True
             self.reply(401)
             return False
@@ -383,8 +391,10 @@ class Handler(BaseHTTPRequestHandler):
             else:
                 raise RpcError(-32601, "Method not found")
             with agent.condition:
-                self.reply(200, {"jsonrpc": "2.0", "id": request_id, "result": agent.snapshot(task)})
+                snapshot = agent.snapshot(task)
+            self.reply(200, {"jsonrpc": "2.0", "id": request_id, "result": snapshot})
         except RpcError as error:
+            self.close_connection = True
             self.reply(200, {"jsonrpc": "2.0", "id": request_id,
                 "error": {"code": error.code, "message": str(error)}})
         except UnicodeError:
@@ -433,6 +443,8 @@ def main():
     parser.add_argument("--workspace", default=os.environ.get("CODEX_WORKSPACE", os.getcwd()))
     parser.add_argument("--host", default=os.environ.get("CODEX_AGENT_HOST", "127.0.0.1"))
     parser.add_argument("--port", type=int, default=8082)
+    parser.add_argument("--sandbox", choices=("workspace-write", "container"),
+                        default=os.environ.get("CODEX_AGENT_SANDBOX", "workspace-write"))
     args = parser.parse_args()
     token = os.environ.get("CODEX_AGENT_TOKEN", "")
     if len(token) < 32 or not token.isascii():
@@ -440,6 +452,8 @@ def main():
     cwd = Path(args.workspace).resolve(strict=True)
     if not cwd.is_dir():
         parser.error("workspace must be a directory")
+    if args.sandbox == "container" and not Path("/.dockerenv").exists():
+        parser.error("container sandbox mode requires running inside Docker")
     model = os.environ.get("CODEX_MODEL", "gpt-6-luna")
     base_url = os.environ.get("CODEX_MODEL_BASE_URL", "http://localhost:4000/v1")
     os.environ.setdefault("CODEX_MODEL_API_KEY", "test")
@@ -448,7 +462,7 @@ def main():
     command = ["codex", "app-server", "-c", 'model_provider="agw"',
                "-c", "model_providers.agw=" + provider]
     backend = Codex(command, str(cwd))
-    agent = Agent(backend, cwd, model)
+    agent = Agent(backend, cwd, model, external_sandbox=args.sandbox == "container")
     try:
         server = ThreadingHTTPServer((args.host, args.port), Handler)
         server.daemon_threads = True

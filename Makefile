@@ -5,7 +5,8 @@ CODEX_MODEL ?= gpt-6-luna
 # Start the containerized A2A coding agent and apply its gateway route/secrets.
 coder:
 	@python3 scripts/setup-env.py
-	@docker compose --profile coder up -d --build codex-agent
+	@docker compose --profile coder build codex-agent
+	@docker compose --profile coder up -d --no-build codex-agent
 
 # Host alternative: set CODEX_AGENT_BACKEND=host.docker.internal:8082 in .env first.
 coder-host:
