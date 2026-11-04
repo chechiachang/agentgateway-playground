@@ -10,7 +10,7 @@ services:
       POSTGRES_PASSWORD: ${POSTGRES_ADMIN_PASSWORD:?Run make setup}
       MCP_DB_PASSWORD: ${MCP_DB_PASSWORD:?Run make setup}
     volumes:
-      - postgres-data:/var/lib/postgresql
+      - postgres-data-v18:/var/lib/postgresql
       - ./examples/postgres-init.sh:/docker-entrypoint-initdb.d/10-mcp-reader.sh:ro
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U postgres -d agentdb"]
@@ -184,7 +184,7 @@ services:
       CODEX_MODEL_BASE_URL: http://agentgateway:4000/v1
       CODEX_MODEL_API_KEY: ${CODEX_MODEL_API_KEY:-test}
     volumes:
-      - ${CODEX_WORKSPACE:-.}:/workspace
+      - codex-workspace:/workspace
       - codex-state:/home/node/.codex
     tmpfs:
       - /tmp:uid=1000,gid=1000,mode=1777
@@ -242,6 +242,7 @@ services:
         condition: service_started
 
 volumes:
-  postgres-data:
+  postgres-data-v18:
   valkey-data:
   codex-state:
+  codex-workspace:

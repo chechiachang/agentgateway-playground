@@ -22,6 +22,8 @@ with tempfile.TemporaryDirectory() as temporary:
         handle.write("\nGITHUB_ORG=test-org\nGITHUB_USER=test-user\nGITHUB_OAUTH_CLIENT_ID=test-id\nGITHUB_OAUTH_CLIENT_SECRET=test-secret\n")
     result = subprocess.run(["docker", "compose", "--profile", "coder", "--project-directory", str(root), "config", "--format", "json"], check=True, capture_output=True, text=True)
     services = json.loads(result.stdout)["services"]
+    assert services["postgres"]["image"].startswith("postgres:18"), "PostgreSQL must remain on version 18"
+    assert any(volume.get("type") == "volume" and volume["source"] == "postgres-data-v18" and volume["target"] == "/var/lib/postgresql" for volume in services["postgres"]["volumes"])
     for name, service in services.items():
         assert service.get("privileged", False) is False, name
         assert "ALL" in service["cap_drop"], name
@@ -43,6 +45,8 @@ with tempfile.TemporaryDirectory() as temporary:
     env = services["agentgateway"]["environment"]
     assert env["OIDC_COOKIE_SECRET"] != env["AGENTGATEWAY_SESSION_KEY"]
     coder = services["codex-agent"]
+    workspace = next(volume for volume in coder["volumes"] if volume["target"] == "/workspace")
+    assert workspace["type"] == "volume" and workspace["source"] == "codex-workspace"
     assert coder.get("ports", []) == []
     assert coder["read_only"] is True
     assert coder["user"] == "1000:1000"

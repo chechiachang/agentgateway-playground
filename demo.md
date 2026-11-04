@@ -8,6 +8,7 @@ Requirements: Docker Compose, Python 3, `curl`, a GitHub OAuth App, and (for inf
 
 ```sh
 make setup
+make model-catalog-refresh
 ```
 
 Edit `.env` and set `GITHUB_ORG`, `GITHUB_USER`, `GITHUB_OAUTH_CLIENT_ID`, `GITHUB_OAUTH_CLIENT_SECRET`, `AZURE_OPENAI_BASE_URL`, and `AZURE_OPENAI_API_KEY`. The OAuth callback must be `http://localhost:5556/dex/callback`; authorize the OAuth App for the configured organization. `make setup` generates local secrets and creates missing config files without replacing existing configs.
@@ -229,15 +230,16 @@ You or another agent → AGW /agents/coder → A2A adapter → Codex CLI → mou
 
 AGW authenticates and routes requests; it does not schedule jobs itself. A caller delegates by submitting an A2A message. The adapter keeps Codex running and serializes tasks against one workspace.
 
-1. Set `CODEX_WORKSPACE` in `.env` to the project directory (default `.`), then start the containerized adapter and pinned Codex CLI:
+1. The `codex-workspace` named volume does not expose this checkout or its `.env` to delegated tasks. Start the containerized adapter and pinned Codex CLI, then populate it only with credential-free project files:
 
    ```sh
    make coder
+   docker compose --profile coder cp ./credential-free-project/. codex-agent:/workspace
    docker compose --profile coder ps codex-agent
    docker compose --profile coder logs -f codex-agent
    ```
 
-   The container runs as UID 1000, publishes no backend port, and mounts only the selected project writable plus a `codex-state` volume. Its root filesystem is read-only; capabilities are dropped and privilege escalation is disabled. Codex uses `externalSandbox` because Docker supplies this isolation, without requiring nested user namespaces or privileged Docker mode. `CODEX_MODEL` defaults to `gpt-6-luna`; model calls use AGW with the local `CODEX_MODEL_API_KEY=test` key. Additional project runtimes belong in [the coder image](examples/codex/Dockerfile).
+   The container runs as UID 1000, publishes no backend port, and mounts only the selected workspace writable plus a `codex-state` volume. Its root filesystem is read-only; capabilities are dropped and privilege escalation is disabled. Codex uses `externalSandbox` because Docker supplies this isolation, without requiring nested user namespaces or privileged Docker mode. `CODEX_MODEL` defaults to `gpt-6-luna`; model calls use AGW with the local `CODEX_MODEL_API_KEY=test` key. Additional project runtimes belong in [the coder image](examples/codex/Dockerfile).
 
 2. Use section 4's local-operator helper to mint a dedicated coder JWT, then discover the card:
 
@@ -335,4 +337,4 @@ python3 -B scripts/check-security.py
 docker compose --profile coder down
 ```
 
-This stops all services, including the optional coder, and preserves PostgreSQL and Codex-state volumes. Add `-v` only when you intend to delete those volumes; it does not undo edits in the mounted project. See [Security](SECURITY.md) for local-demo limitations.
+This stops all services, including the optional coder, and preserves PostgreSQL and Codex volumes. PostgreSQL 18 uses a separate `postgres-data-v18` volume; any existing `postgres-data` volume is left untouched and is not migrated. Back up and restore existing data into PostgreSQL 18 explicitly. Add `-v` only when you intend to delete volumes; it does not undo edits in a mounted project. See [Security](SECURITY.md) for local-demo limitations.
