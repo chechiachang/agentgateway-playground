@@ -75,10 +75,30 @@ def _sql_tokens(query):
             identifier = "".join(identifier)
             if unicode_identifier:
                 escape = "\\"
-                clause = re.match(r"\s+UESCAPE\s+'([^']*)'", query[index:], re.I)
-                if clause:
-                    escape = clause.group(1).replace("''", "'")
-                    index += clause.end()
+                clause_start = index
+                while clause_start < len(query) and query[clause_start].isspace():
+                    clause_start += 1
+                clause_end = clause_start + len("UESCAPE")
+                if query[clause_start:clause_end].upper() == "UESCAPE" and (clause_end == len(query) or not (query[clause_end].isalnum() or query[clause_end] in "_$")):
+                    value_start = clause_end
+                    while value_start < len(query) and query[value_start].isspace():
+                        value_start += 1
+                    if value_start < len(query) and query[value_start] == "'":
+                        value_start += 1
+                        value = []
+                        while value_start < len(query):
+                            if query[value_start] == "'" and value_start + 1 < len(query) and query[value_start + 1] == "'":
+                                value.append("'")
+                                value_start += 2
+                            elif query[value_start] == "'":
+                                value_start += 1
+                                break
+                            else:
+                                value.append(query[value_start])
+                                value_start += 1
+                        if len(value) == 1:
+                            escape = value[0]
+                            index = value_start
                 decoded = []
                 pos = 0
                 while pos < len(identifier):

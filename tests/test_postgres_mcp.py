@@ -22,6 +22,7 @@ class ReadOnlySqlTests(unittest.TestCase):
             'SELECT "pg_terminate_backend"(123)',
             'SELECT pg_catalog."pg_terminate_backend"(123)',
             'SELECT U&"pg\\005fterminate_backend"(123)',
+            'SELECT U&"pg!005fterminate_backend" UESCAPE \'!\'(123)',
         ):
             with self.subTest(query=query), self.assertRaises(ValueError):
                 server.readonly_query(query)
