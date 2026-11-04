@@ -9,7 +9,7 @@ ROOT = Path(__file__).resolve().parent.parent
 KEYS = {
     "VAULT_DEV_ROOT_TOKEN_ID", "DEX_VAULT_CLIENT_SECRET",
     "DEX_AGENTGATEWAY_CLIENT_SECRET", "AGENTGATEWAY_SESSION_KEY",
-    "OIDC_COOKIE_SECRET",
+    "OIDC_COOKIE_SECRET", "POSTGRES_ADMIN_PASSWORD", "MCP_DB_PASSWORD",
 }
 PUBLIC_DEFAULTS = {
     "demo-root-token", "demo-vault-oidc-client-secret",

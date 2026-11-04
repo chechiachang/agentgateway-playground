@@ -53,6 +53,7 @@ identities = {
     "tool-calculate": "tools:calculate",
     "tool-stats": "tools:text-stats",
     "tool-reverse": "tools:reverse-text",
+    "tool-postgres": "tools:postgres-read",
     "agent-calculator": "agents:calculator",
     "agent-text-analyst": "agents:text-analyst",
     "agent-text-transformer": "agents:text-transformer",
@@ -96,6 +97,7 @@ for identity, allowed_suffix, args, expected in [
     ("tool-calculate", "calculate", {"expression": "(12 + 8) * 3"}, {"value": 60}),
     ("tool-stats", "text_stats", {"text": "Hello from agentgateway"}, {"characters": 23, "words": 3, "lines": 1}),
     ("tool-reverse", "reverse_text", {"text": "agentgateway"}, {"text": "yawetagtnega"}),
+    ("tool-postgres", "postgres_postgres_query", {"sql": "SELECT 1 AS value"}, [{"value": 1}]),
 ]:
     token = TOKENS[identity]
     # Current gateway policy may filter denied tools in tools/list; it must deny
@@ -104,8 +106,15 @@ for identity, allowed_suffix, args, expected in [
     allowed_name = next(tool["name"] for tool in visible if tool["name"].endswith(allowed_suffix))
     result = mcp_call(allowed_name, args, token, 11)["result"]
     assert not result.get("isError"), result
-    assert json.loads(result["content"][0]["text"]) == expected, result
-    for denied_name in ("playground_calculate", "playground_text_stats", "playground_reverse_text"):
+    actual = json.loads(result["content"][0]["text"])
+    if identity == "tool-postgres":
+        assert actual == expected, result
+    else:
+        assert actual == expected, result
+    denied_tools = ["playground_calculate", "playground_text_stats", "playground_reverse_text"]
+    if identity != "tool-postgres":
+        denied_tools.append("postgres_postgres_query")
+    for denied_name in denied_tools:
         if denied_name == allowed_name:
             continue
         try:

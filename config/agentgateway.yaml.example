@@ -84,11 +84,19 @@ mcp:
         - allow: 'mcp.tool.name == "playground_calculate" && jwt.access == "tools:calculate"'
         - allow: 'mcp.tool.name == "playground_text_stats" && jwt.access == "tools:text-stats"'
         - allow: 'mcp.tool.name == "playground_reverse_text" && jwt.access == "tools:reverse-text"'
+        - allow: 'mcp.tool.name == "postgres_postgres_list_tables" && jwt.access == "tools:postgres-read"'
+        - allow: 'mcp.tool.name == "postgres_postgres_describe_table" && jwt.access == "tools:postgres-read"'
+        - allow: 'mcp.tool.name == "postgres_postgres_query" && jwt.access == "tools:postgres-read"'
   targets:
     - name: playground
       mcp:
         host: demo-tools-agents
         port: 8080
+        path: /mcp
+    - name: postgres
+      mcp:
+        host: postgres-mcp
+        port: 8081
         path: /mcp
 
 routes:

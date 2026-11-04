@@ -29,8 +29,14 @@ with tempfile.TemporaryDirectory() as temporary:
         for port in service.get("ports", []):
             assert port["host_ip"] == "127.0.0.1", name
         for volume in service.get("volumes", []):
+            if volume.get("type") == "volume":
+                continue  # PostgreSQL data volume must be writable; bind mounts remain read-only.
             assert volume.get("read_only"), name
     assert set(services["vault-init"]["environment"]) == {"VAULT_ADDR", "VAULT_TOKEN", "GITHUB_ORG", "GITHUB_USER", "DEX_VAULT_CLIENT_SECRET"}
+    assert services["postgres"].get("ports", []) == []
+    assert services["postgres-mcp"].get("ports", []) == []
+    assert services["postgres-mcp"]["environment"]["DATABASE_URL"].startswith("postgres://mcp_reader:")
+    assert "POSTGRES_ADMIN_PASSWORD" not in services["postgres-mcp"]["environment"]
     env = services["agentgateway"]["environment"]
     assert env["OIDC_COOKIE_SECRET"] != env["AGENTGATEWAY_SESSION_KEY"]
 print("PASS Compose: loopback ports, restricted privileges, read-only mounts, least-secret setup, independent keys")

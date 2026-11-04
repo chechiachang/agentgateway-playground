@@ -1,4 +1,44 @@
 services:
+  postgres:
+    cap_drop: [ALL]
+    security_opt: ["no-new-privileges:true"]
+    image: postgres:17-alpine
+    user: "postgres"
+    environment:
+      POSTGRES_DB: agentdb
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: ${POSTGRES_ADMIN_PASSWORD:?Run make setup}
+      MCP_DB_PASSWORD: ${MCP_DB_PASSWORD:?Run make setup}
+    volumes:
+      - postgres-data:/var/lib/postgresql/data
+      - ./examples/postgres-init.sh:/docker-entrypoint-initdb.d/10-mcp-reader.sh:ro
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres -d agentdb"]
+      interval: 2s
+      timeout: 3s
+      retries: 30
+
+  postgres-mcp:
+    cap_drop: [ALL]
+    security_opt: ["no-new-privileges:true"]
+    build: ./examples
+    image: agentgateway-playground-examples:local
+    user: "65532:65532"
+    read_only: true
+    command: ["python", "-B", "/demo/postgres-mcp.py"]
+    environment:
+      DATABASE_URL: postgres://mcp_reader:${MCP_DB_PASSWORD:?Run make setup}@postgres:5432/agentdb?sslmode=disable
+    volumes:
+      - ./examples/postgres-mcp.py:/demo/postgres-mcp.py:ro
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8081/health', timeout=2)"]
+      interval: 2s
+      timeout: 3s
+      retries: 30
+    depends_on:
+      postgres:
+        condition: service_healthy
+
   vault:
     cap_drop: [ALL]
     security_opt: ["no-new-privileges:true"]
@@ -108,5 +148,10 @@ services:
     depends_on:
       demo-tools-agents:
         condition: service_healthy
+      postgres-mcp:
+        condition: service_healthy
       vault-init:
         condition: service_completed_successfully
+
+volumes:
+  postgres-data:
