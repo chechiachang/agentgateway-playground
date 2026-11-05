@@ -15,6 +15,7 @@ config:
 
 frontendPolicies:
   accessLog:
+    preset: otel
     database:
       llm: metadata
 
