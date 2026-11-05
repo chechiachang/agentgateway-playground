@@ -26,5 +26,6 @@ connectors:
       clientID: $GITHUB_OAUTH_CLIENT_ID
       clientSecret: $GITHUB_OAUTH_CLIENT_SECRET
       redirectURI: http://localhost:5556/dex/callback
+      teamNameField: slug
       orgs:
         - name: $GITHUB_ORG

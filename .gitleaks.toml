@@ -7,3 +7,11 @@ useDefault = true
 description = "Historical public demo session key only"
 regexTarget = "secret"
 regexes = ['^0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef$']
+
+# This exact public demo API key is intentionally documented, not a private token.
+[[allowlists]]
+description = "Published README rate-limit demo key only"
+condition = "AND"
+paths = ['^README\.md$']
+regexTarget = "secret"
+regexes = ['^test-ratelimit$']

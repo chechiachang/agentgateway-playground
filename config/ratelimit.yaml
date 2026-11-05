@@ -1,0 +1,12 @@
+domain: agentgateway
+descriptors:
+  - key: user
+    value: test-ratelimit
+    rate_limit: { unit: minute, requests_per_unit: 1 }
+  # $10 per fixed 30-day month in micro-USD for the `test` API-key identity.
+  - key: api_key_cost_month
+    value: test
+    rate_limit: { unit: month, requests_per_unit: 10000000 }
+  # $100 per fixed 30-day month in micro-USD, per JWT username.
+  - key: user_cost_month
+    rate_limit: { unit: month, requests_per_unit: 100000000 }
