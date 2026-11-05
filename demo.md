@@ -123,7 +123,7 @@ These patterns are a demonstration, not a complete sensitive-data or prompt-inje
 
 ## 4. Demonstrate MCP tools
 
-The playground uses one-hour Vault JWTs: `nationalteam:sre` members can use all MCP tools, while other identities need a tool-scoped `access` claim.
+The playground uses 10-hour Vault JWTs: `nationalteam:sre` members can use all MCP tools, while other identities need a tool-scoped `access` claim.
 
 ```sh
 mint_jwt() {
@@ -134,8 +134,8 @@ mint_jwt() {
     entity_id=$(vault read -field=id "identity/entity/name/$name")
     accessor=$(vault read -field=accessor sys/auth/token)
     vault write identity/entity-alias name="$name" canonical_id="$entity_id" mount_accessor="$accessor" >/dev/null
-    vault write "auth/token/roles/$name" allowed_entity_aliases="$name" allowed_policies=agentgateway-login token_explicit_max_ttl=1h >/dev/null
-    VAULT_TOKEN=$(vault token create -role="$name" -entity-alias="$name" -policy=agentgateway-login -no-default-policy -ttl=1h -field=token)
+    vault write "auth/token/roles/$name" allowed_entity_aliases="$name" allowed_policies=agentgateway-login token_explicit_max_ttl=10h >/dev/null
+    VAULT_TOKEN=$(vault token create -role="$name" -entity-alias="$name" -policy=agentgateway-login -no-default-policy -ttl=10h -field=token)
     export VAULT_TOKEN
     vault read -field=token identity/oidc/token/agentgateway-access
   ' sh "$1"

@@ -16,8 +16,8 @@ docker compose up -d --force-recreate
 ## Login
 
 ```sh
-eval "$(make login)"  # opens your browser; sign in with GitHub
-eval "$(make jwt)"    # refresh JWT using the stored Vault session
+eval "$(make login)"  # 10-hour Vault session and JWT; opens browser for GitHub sign-in
+eval "$(make jwt)"    # refresh the 10-hour ID token using the stored Vault session
 ```
 
 ## Gateway UI
@@ -97,7 +97,7 @@ export VAULT_TOKEN="$(grep '^VAULT_DEV_ROOT_TOKEN_ID=' .env | cut -d= -f2-)"
 scripts/mint-demo-identities.sh  # records entity IDs; does not grant caller write access
 # Operator-only example for one entity ID; repeat with the exact value above:
 eval "$(make login)"  # Vault JWT with the configured GitHub user's bound identity
-eval "$(make jwt)"    # short-lived ID token; keep it in shell memory only
+eval "$(make jwt)"    # refresh the 10-hour ID token using the stored Vault session
 ```
 
 For isolated MCP smoke checks, set `JWT_TOOL_CALCULATE`, `JWT_TOOL_STATS`, `JWT_TOOL_REVERSE`, and `JWT_TOOL_POSTGRES` to valid scoped Vault JWTs, plus `JWT_NO_ACCESS` to an authenticated, non-SRE JWT without an MCP grant. Set `AGW_API_KEY` to a configured API key (defaults to local demo key `test`) for A2A checks. Optionally set `JWT_SRE` and `JWT_NO_SRE` to verify JWT allow/deny for the group policy. See [config](config/agentgateway.yaml) and [Vault bootstrap](scripts/vault-init.sh) for the JWT claim and policy wiring.

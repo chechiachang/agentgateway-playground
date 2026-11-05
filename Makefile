@@ -15,12 +15,12 @@ coder-host:
 setup:
 	@python3 scripts/setup-env.py
 
-# Login to Vault through GitHub, then mint a scoped JWT: eval "$(make login)".
+# GitHub Vault login (10h) and scoped JWT (10h): eval "$(make login)".
 login:
 	@python3 scripts/login.py
 	@$(MAKE) --no-print-directory jwt
 
-# Reuse the stored Vault session: eval "$(make jwt)".
+# Reuse the stored 10-hour Vault session and mint a 10-hour JWT: eval "$(make jwt)".
 jwt:
 	@token=$$(docker compose exec -T vault vault read -field=token identity/oidc/token/agentgateway-access) || exit $$?; \
 	  printf '%s' "$$token" | LC_ALL=C grep -Eq '^[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+$$' || { echo 'Vault returned an invalid JWT' >&2; exit 1; }; \

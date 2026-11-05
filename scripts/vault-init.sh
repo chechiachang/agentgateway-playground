@@ -64,8 +64,8 @@ vault write auth/oidc/role/agentgateway - <<EOF
     "http://localhost:8200/ui/vault/auth/oidc/oidc/callback"
   ],
   "token_policies": ["agentgateway-login"],
-  "token_ttl": "1h",
-  "token_max_ttl": "1h",
+  "token_ttl": "10h",
+  "token_max_ttl": "10h",
   "token_no_default_policy": true
 }
 EOF
@@ -102,7 +102,7 @@ vault write identity/oidc/key/agentgateway \
 oidc_jwt_template=$(sed "s/OIDC_MOUNT_ACCESSOR/$oidc_accessor/g" \
   /demo/vault-jwt-template.json)
 vault write identity/oidc/role/agentgateway-access \
-  key=agentgateway client_id=agentgateway ttl=1h \
+  key=agentgateway client_id=agentgateway ttl=10h \
   template="$oidc_jwt_template"
 
 echo 'Vault browser OIDC auth and agentgateway JWT issuance configured.'
