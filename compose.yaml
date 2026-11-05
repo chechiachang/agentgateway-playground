@@ -221,8 +221,8 @@ services:
       - "127.0.0.1:4000:4000"
     volumes:
       - type: bind
-        source: ./config/agentgateway.yaml
-        target: /config/config.yaml
+        source: ./config/agentgateway
+        target: /config
         read_only: true
         bind:
           create_host_path: false

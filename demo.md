@@ -85,7 +85,7 @@ sh scripts/check-models.sh path/to/systemone-request.json  # optional custom pay
 
 ## Security: authentication and model guardrails
 
-Authentication identifies the caller; authorization decides which routes/tools they may use; guardrails inspect model content. Policies are in [config/agentgateway.yaml](config/agentgateway.yaml).
+Authentication identifies the caller; authorization decides which routes/tools they may use; guardrails inspect model content. Policies are in [config/agentgateway/config.yaml](config/agentgateway/config.yaml).
 
 | Credential | Header | Access |
 |---|---|---|
@@ -208,11 +208,11 @@ curl -i http://localhost:4000/agents/calculator \
   --data '{"jsonrpc":"2.0","id":1,"method":"message/send","params":{"message":{"kind":"message","role":"user","messageId":"demo-jwt","parts":[{"kind":"text","text":"(12 + 8) * 3"}]}}}'
 ```
 
-The response is HTTP 200 with an agent message containing `{"value":60}`. A missing/invalid credential or a JWT without `groups: [nationalteam:sre]` is rejected with HTTP 401/403. The API key and JWT here authenticate the caller; they are distinct from agent-side model-provider keys. Unlike kagent's controller, these demos have no gRPC, streaming, persisted sessions/tasks, or human-in-the-loop support. Routes and group authorization are defined in [config/agentgateway.yaml](config/agentgateway.yaml); restart Agentgateway after changing it.
+The response is HTTP 200 with an agent message containing `{"value":60}`. A missing/invalid credential or a JWT without `groups: [nationalteam:sre]` is rejected with HTTP 401/403. The API key and JWT here authenticate the caller; they are distinct from agent-side model-provider keys. Unlike kagent's controller, these demos have no gRPC, streaming, persisted sessions/tasks, or human-in-the-loop support. Routes and group authorization are defined in [config/agentgateway/config.yaml](config/agentgateway/config.yaml); restart Agentgateway after changing it.
 
 ### List agents
 
-These are the configured agents; `coder` runs only when its Compose profile is started. Every endpoint is `/agents/NAME`; its card is `/agents/NAME/.well-known/agent-card.json`. A2A has no global list endpoint in this demo. Inspect configured routes with `rg -n 'pathPrefix: /agents/' config/agentgateway.yaml`, then fetch any card with the same authorized caller credential.
+These are the configured agents; `coder` runs only when its Compose profile is started. Every endpoint is `/agents/NAME`; its card is `/agents/NAME/.well-known/agent-card.json`. A2A has no global list endpoint in this demo. Inspect configured routes with `rg -n 'pathPrefix: /agents/' config/agentgateway/config.yaml`, then fetch any card with the same authorized caller credential.
 
 The same `x-api-key: test` (or an authorized JWT) works for each endpoint:
 
