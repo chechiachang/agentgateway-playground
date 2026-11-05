@@ -16,8 +16,8 @@ docker compose up -d --force-recreate
 ## Login
 
 ```sh
-eval "$(make login)"  # opens your browser; sign in with GitHub
-eval "$(make jwt)"    # refresh JWT using the stored Vault session
+eval "$(make login)"  # 10-hour Vault session and JWT; opens browser for GitHub sign-in
+eval "$(make jwt)"    # refresh the 10-hour ID token using the stored Vault session
 ```
 
 ## Gateway UI
@@ -28,7 +28,7 @@ Open <http://localhost:4000/ui> → **Sign in with SSO** → GitHub. The same or
 
 ## Model cost catalog
 
-Refresh public pricing with `make model-catalog-refresh`. The validated catalog is atomically written to ignored `data/model-catalog/catalog.json` and mounted read-only at `/config/costs/catalog.json`; restart Agentgateway after refreshing so new requests use the updated prices. Only models with matching catalog prices are cost-accounted. The custom `decision-1` SystemOne model is unpriced and is not covered by the spend limit.
+Refresh public pricing with `make model-catalog-refresh`. The validated catalog is atomically written to ignored `data/model-catalog/catalog.json` and mounted read-only at `/costs/catalog.json`; restart Agentgateway after refreshing so new requests use the updated prices. Only models with matching catalog prices are cost-accounted. The custom `decision-1` SystemOne model is unpriced and is not covered by the spend limit.
 
 ## Local model tests
 
@@ -60,7 +60,7 @@ done
 
 Strict demo guards are opt-in: request `gpt-6-luna-guarded` or `gpt-6.1-sol-guarded` (same underlying providers). They reject SSNs and `AGW_DEMO_SECRET_*` tokens in input (HTTP `403`) and mask non-streaming output. Streaming matches are blocked with an SSE error; earlier output cannot be retracted. Rules scan conversation history too, so even quoted examples can block resume. Normal chat models have no demo guards and remain usable for Codex. Authentication and rate limits apply to all models.
 
-Rules live in the tracked [gateway config](config/agentgateway.yaml). Restart Agentgateway after changes. These local patterns are not a complete sensitive-data or prompt-injection defense.
+Rules live in the tracked [gateway config](config/agentgateway/config.yaml). Restart Agentgateway after changes. These local patterns are not a complete sensitive-data or prompt-injection defense.
 
 ```sh
 docker compose restart agentgateway
@@ -97,20 +97,20 @@ export VAULT_TOKEN="$(grep '^VAULT_DEV_ROOT_TOKEN_ID=' .env | cut -d= -f2-)"
 scripts/mint-demo-identities.sh  # records entity IDs; does not grant caller write access
 # Operator-only example for one entity ID; repeat with the exact value above:
 eval "$(make login)"  # Vault JWT with the configured GitHub user's bound identity
-eval "$(make jwt)"    # short-lived ID token; keep it in shell memory only
+eval "$(make jwt)"    # refresh the 10-hour ID token using the stored Vault session
 ```
 
-For isolated MCP smoke checks, set `JWT_TOOL_CALCULATE`, `JWT_TOOL_STATS`, `JWT_TOOL_REVERSE`, and `JWT_TOOL_POSTGRES` to valid scoped Vault JWTs, plus `JWT_NO_ACCESS` to an authenticated, non-SRE JWT without an MCP grant. Set `AGW_API_KEY` to a configured API key (defaults to local demo key `test`) for A2A checks. Optionally set `JWT_SRE` and `JWT_NO_SRE` to verify JWT allow/deny for the group policy. See [config](config/agentgateway.yaml) and [Vault bootstrap](scripts/vault-init.sh) for the JWT claim and policy wiring.
+For isolated MCP smoke checks, set `JWT_TOOL_CALCULATE`, `JWT_TOOL_STATS`, `JWT_TOOL_REVERSE`, and `JWT_TOOL_POSTGRES` to valid scoped Vault JWTs, plus `JWT_NO_ACCESS` to an authenticated, non-SRE JWT without an MCP grant. Set `AGW_API_KEY` to a configured API key (defaults to local demo key `test`) for A2A checks. Optionally set `JWT_SRE` and `JWT_NO_SRE` to verify JWT allow/deny for the group policy. See [config](config/agentgateway/config.yaml) and [Vault bootstrap](scripts/vault-init.sh) for the JWT claim and policy wiring.
 
 ### PostgreSQL MCP: discovery and safety
 
-The MCP endpoint is `/mcp`. MCP clients first call `tools/list`; the gateway returns only tools permitted by the caller's validated Vault JWT. `nationalteam:sre` identities see all tools. Other identities need `tools:postgres-read` to discover the three `postgres_postgres_*` tools. To discover gateway MCP endpoints, inspect the `mcp.targets` entries in `config/agentgateway.yaml` (or the template); tools themselves are discovered at runtime with MCP `tools/list`, not inferred from documentation. Gateway JWT validation and CEL allowlists are the enforcement boundary.
+The MCP endpoint is `/mcp`. MCP clients first call `tools/list`; the gateway returns only tools permitted by the caller's validated Vault JWT. `nationalteam:sre` identities see all tools. Other identities need `tools:postgres-read` to discover the three `postgres_postgres_*` tools. To discover gateway MCP endpoints, inspect the `mcp.targets` entries in `config/agentgateway/config.yaml` (or the template); tools themselves are discovered at runtime with MCP `tools/list`, not inferred from documentation. Gateway JWT validation and CEL allowlists are the enforcement boundary.
 
 The Postgres service is private to the Compose network and has no published host port. PostgreSQL 18 uses the `postgres-data-v18` volume; an existing `postgres-data` volume is left untouched and is not migrated. Back up and restore existing data into PostgreSQL 18 explicitly. The MCP container gets only the reader connection string; the database admin password is never passed to the gateway or MCP. On initial database volume creation, Compose provisions `mcp_reader` with cluster database discovery/connect access, default read-only transactions, and SELECT-only rights in the initialized database; future tables created by the postgres owner inherit SELECT. MCP accepts only a single SELECT, disallows comments, semicolons, mutating/locking constructs, wraps results with a 200-row cap, and applies 5-second statement and 2-second lock timeouts. Database grants and read-only transactions are the final authority, not SQL filtering alone. Never use a real administrator credential for this MCP. `make setup` generates independent local admin/reader passwords; protect `.env` and database volumes. If credentials are changed after the volume was initialized, update the role in the database explicitly (init scripts run only on an empty volume).
 
 Grant just `tools:postgres-read` to a dedicated Vault identity to permit all three read tools; leave the claim absent or unmatched to deny access. Each database tool can expose sensitive data and consume resources despite being read-only. Gateway authorization limits which identity can query, but does not filter rows or columns; use a narrow database view/schema and grants for finer boundaries. Data returned to the model may leave the machine via the configured model provider. DB-side read-only mode prevents writes, not data exfiltration or expensive reads. The separate MCP process/network and unprivileged DB account reduce blast radius; they add dependency/configuration complexity and an extra trusted component. This demo uses plain Compose-network PostgreSQL transport, suitable only for local trusted Docker networking, not production multi-host transport.
 
-MCP targets and route policies live in [the gateway config](config/agentgateway.yaml).
+MCP targets and route policies live in [the gateway config](config/agentgateway/config.yaml).
 
 ```sh
 docker compose up -d --build

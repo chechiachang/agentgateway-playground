@@ -29,7 +29,7 @@ for model in ("gpt-6-luna-guarded", "gpt-6.1-sol-guarded"):
             status, body = error.code, error.read()
         if status != 403 or body != b"Guardrail rejected sensitive input.":
             sys.exit(f"FAIL {model} / {label}: HTTP {status}; expected guardrail rejection. "
-                     "Merge chat guardrails into config/agentgateway.yaml and restart the gateway.")
+                     "Merge chat guardrails into config/agentgateway/config.yaml and restart the gateway.")
         print(f"PASS {model} / {label}: rejected before inference")
     # Codex uses Responses, which also resends conversation history.
     payload = {"model": model, "input": [

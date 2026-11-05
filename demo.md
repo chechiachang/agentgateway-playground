@@ -85,7 +85,7 @@ sh scripts/check-models.sh path/to/systemone-request.json  # optional custom pay
 
 ## Security: authentication and model guardrails
 
-Authentication identifies the caller; authorization decides which routes/tools they may use; guardrails inspect model content. Policies are in [config/agentgateway.yaml](config/agentgateway.yaml).
+Authentication identifies the caller; authorization decides which routes/tools they may use; guardrails inspect model content. Policies are in [config/agentgateway/config.yaml](config/agentgateway/config.yaml).
 
 | Credential | Header | Access |
 |---|---|---|
@@ -123,7 +123,7 @@ These patterns are a demonstration, not a complete sensitive-data or prompt-inje
 
 ## 4. Demonstrate MCP tools
 
-The playground uses one-hour Vault JWTs: `nationalteam:sre` members can use all MCP tools, while other identities need a tool-scoped `access` claim.
+The playground uses 10-hour Vault JWTs: `nationalteam:sre` members can use all MCP tools, while other identities need a tool-scoped `access` claim.
 
 ```sh
 mint_jwt() {
@@ -134,8 +134,8 @@ mint_jwt() {
     entity_id=$(vault read -field=id "identity/entity/name/$name")
     accessor=$(vault read -field=accessor sys/auth/token)
     vault write identity/entity-alias name="$name" canonical_id="$entity_id" mount_accessor="$accessor" >/dev/null
-    vault write "auth/token/roles/$name" allowed_entity_aliases="$name" allowed_policies=agentgateway-login token_explicit_max_ttl=1h >/dev/null
-    VAULT_TOKEN=$(vault token create -role="$name" -entity-alias="$name" -policy=agentgateway-login -no-default-policy -ttl=1h -field=token)
+    vault write "auth/token/roles/$name" allowed_entity_aliases="$name" allowed_policies=agentgateway-login token_explicit_max_ttl=10h >/dev/null
+    VAULT_TOKEN=$(vault token create -role="$name" -entity-alias="$name" -policy=agentgateway-login -no-default-policy -ttl=10h -field=token)
     export VAULT_TOKEN
     vault read -field=token identity/oidc/token/agentgateway-access
   ' sh "$1"
@@ -208,11 +208,11 @@ curl -i http://localhost:4000/agents/calculator \
   --data '{"jsonrpc":"2.0","id":1,"method":"message/send","params":{"message":{"kind":"message","role":"user","messageId":"demo-jwt","parts":[{"kind":"text","text":"(12 + 8) * 3"}]}}}'
 ```
 
-The response is HTTP 200 with an agent message containing `{"value":60}`. A missing/invalid credential or a JWT without `groups: [nationalteam:sre]` is rejected with HTTP 401/403. The API key and JWT here authenticate the caller; they are distinct from agent-side model-provider keys. Unlike kagent's controller, these demos have no gRPC, streaming, persisted sessions/tasks, or human-in-the-loop support. Routes and group authorization are defined in [config/agentgateway.yaml](config/agentgateway.yaml); restart Agentgateway after changing it.
+The response is HTTP 200 with an agent message containing `{"value":60}`. A missing/invalid credential or a JWT without `groups: [nationalteam:sre]` is rejected with HTTP 401/403. The API key and JWT here authenticate the caller; they are distinct from agent-side model-provider keys. Unlike kagent's controller, these demos have no gRPC, streaming, persisted sessions/tasks, or human-in-the-loop support. Routes and group authorization are defined in [config/agentgateway/config.yaml](config/agentgateway/config.yaml); restart Agentgateway after changing it.
 
 ### List agents
 
-These are the configured agents; `coder` runs only when its Compose profile is started. Every endpoint is `/agents/NAME`; its card is `/agents/NAME/.well-known/agent-card.json`. A2A has no global list endpoint in this demo. Inspect configured routes with `rg -n 'pathPrefix: /agents/' config/agentgateway.yaml`, then fetch any card with the same authorized caller credential.
+These are the configured agents; `coder` runs only when its Compose profile is started. Every endpoint is `/agents/NAME`; its card is `/agents/NAME/.well-known/agent-card.json`. A2A has no global list endpoint in this demo. Inspect configured routes with `rg -n 'pathPrefix: /agents/' config/agentgateway/config.yaml`, then fetch any card with the same authorized caller credential.
 
 The same `x-api-key: test` (or an authorized JWT) works for each endpoint:
 
