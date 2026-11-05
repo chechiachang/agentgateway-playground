@@ -28,7 +28,7 @@ Open <http://localhost:4000/ui> → **Sign in with SSO** → GitHub. The same or
 
 ## Model cost catalog
 
-Refresh public pricing with `make model-catalog-refresh`. The validated catalog is atomically written to ignored `data/model-catalog/catalog.json` and mounted read-only at `/config/costs/catalog.json`; restart Agentgateway after refreshing so new requests use the updated prices. Only models with matching catalog prices are cost-accounted. The custom `decision-1` SystemOne model is unpriced and is not covered by the spend limit.
+Refresh public pricing with `make model-catalog-refresh`. The validated catalog is atomically written to ignored `data/model-catalog/catalog.json` and mounted read-only at `/costs/catalog.json`; restart Agentgateway after refreshing so new requests use the updated prices. Only models with matching catalog prices are cost-accounted. The custom `decision-1` SystemOne model is unpriced and is not covered by the spend limit.
 
 ## Local model tests
 

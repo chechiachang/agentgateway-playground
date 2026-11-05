@@ -2,7 +2,7 @@
 config:
   adminAddr: 'off'
   modelCatalog:
-    - file: /config/costs/catalog.json
+    - file: /costs/catalog.json
   database:
     url: $AGENTGATEWAY_DATABASE_URL
   logging:
