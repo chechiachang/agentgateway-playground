@@ -7,9 +7,11 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 
 try:
     import psycopg
+    from psycopg.conninfo import make_conninfo
     from psycopg.rows import dict_row
 except ImportError:  # SQL validation tests can run without the container driver.
     psycopg = None
+    make_conninfo = None
     dict_row = None
 
 MAX_ROWS = 200
@@ -17,9 +19,10 @@ MAX_SQL_CHARS = 8000
 FORBIDDEN = re.compile(r"\b(insert|update|delete|merge|create|alter|drop|truncate|grant|revoke|copy|call|do|vacuum|refresh|comment|set|reset|discard|listen|notify|prepare|execute|deallocate)\b", re.I)
 UNSAFE_FUNCTIONS = {"pg_sleep", "pg_read_file", "pg_read_binary_file", "pg_ls_dir", "lo_import", "lo_export", "dblink"}
 TOOLS = [
-    {"name": "postgres_list_tables", "description": "List accessible tables in the public schema.", "inputSchema": {"type": "object", "properties": {}, "additionalProperties": False}},
-    {"name": "postgres_describe_table", "description": "Describe columns for a public-schema table.", "inputSchema": {"type": "object", "properties": {"table": {"type": "string", "maxLength": 63}}, "required": ["table"], "additionalProperties": False}},
-    {"name": "postgres_query", "description": "Run one bounded, read-only SELECT query (maximum 200 rows).", "inputSchema": {"type": "object", "properties": {"sql": {"type": "string", "maxLength": MAX_SQL_CHARS}}, "required": ["sql"], "additionalProperties": False}},
+    {"name": "postgres_list_databases", "description": "List connectable databases in the PostgreSQL cluster.", "inputSchema": {"type": "object", "properties": {}, "additionalProperties": False}},
+    {"name": "postgres_list_tables", "description": "List accessible tables and views across non-system schemas; optionally select a database.", "inputSchema": {"type": "object", "properties": {"database": {"type": "string", "maxLength": 63}}, "additionalProperties": False}},
+    {"name": "postgres_describe_table", "description": "Describe columns for an accessible table; optionally select a schema and database.", "inputSchema": {"type": "object", "properties": {"table": {"type": "string", "maxLength": 63}, "schema": {"type": "string", "maxLength": 63}, "database": {"type": "string", "maxLength": 63}}, "required": ["table"], "additionalProperties": False}},
+    {"name": "postgres_query", "description": "Run one bounded, read-only SELECT query (maximum 200 rows); optionally select a database.", "inputSchema": {"type": "object", "properties": {"sql": {"type": "string", "maxLength": MAX_SQL_CHARS}, "database": {"type": "string", "maxLength": 63}}, "required": ["sql"], "additionalProperties": False}},
 ]
 
 
@@ -150,19 +153,28 @@ def readonly_query(sql):
 
 
 def call_tool(name, args):
-    if name not in {"postgres_list_tables", "postgres_describe_table", "postgres_query"}:
+    if name not in {"postgres_list_databases", "postgres_list_tables", "postgres_describe_table", "postgres_query"}:
         raise ValueError("unknown tool")
     if psycopg is None:
         raise RuntimeError("psycopg driver is not installed")
-    with psycopg.connect(os.environ["DATABASE_URL"], connect_timeout=5, options="-c default_transaction_read_only=on -c statement_timeout=5000 -c lock_timeout=2000", row_factory=dict_row) as conn:
+    database = args.get("database")
+    if database is not None and (not isinstance(database, str) or not database or len(database) > 63):
+        raise ValueError("database must be a PostgreSQL database name")
+    conninfo = make_conninfo(os.environ["DATABASE_URL"], dbname=database) if database else os.environ["DATABASE_URL"]
+    with psycopg.connect(conninfo, connect_timeout=5, options="-c default_transaction_read_only=on -c statement_timeout=5000 -c lock_timeout=2000", row_factory=dict_row) as conn:
         with conn.transaction():
-            if name == "postgres_list_tables":
-                rows = conn.execute("SELECT table_name FROM information_schema.tables WHERE table_schema = 'public' AND table_type = 'BASE TABLE' ORDER BY table_name").fetchall()
+            if name == "postgres_list_databases":
+                rows = conn.execute("SELECT datname AS database, has_database_privilege(current_user, datname, 'CONNECT') AS can_connect FROM pg_database WHERE datallowconn AND NOT datistemplate ORDER BY datname").fetchall()
+            elif name == "postgres_list_tables":
+                rows = conn.execute("SELECT table_schema, table_name, table_type FROM information_schema.tables WHERE table_schema NOT IN ('pg_catalog', 'information_schema') AND table_schema NOT LIKE 'pg_toast%' AND table_schema NOT LIKE 'pg_temp_%' ORDER BY table_schema, table_name").fetchall()
             elif name == "postgres_describe_table":
                 table = args.get("table")
                 if not isinstance(table, str) or len(table) > 63:
                     raise ValueError("table must be a PostgreSQL identifier")
-                rows = conn.execute("SELECT column_name, data_type, is_nullable FROM information_schema.columns WHERE table_schema = 'public' AND table_name = %s ORDER BY ordinal_position", (table,)).fetchall()
+                schema = args.get("schema", "public")
+                if not isinstance(schema, str) or len(schema) > 63:
+                    raise ValueError("schema must be a PostgreSQL identifier")
+                rows = conn.execute("SELECT table_schema, column_name, data_type, is_nullable FROM information_schema.columns WHERE table_schema = %s AND table_name = %s ORDER BY ordinal_position", (schema, table)).fetchall()
             elif name == "postgres_query":
                 query = readonly_query(args.get("sql"))
                 rows = conn.execute("SELECT * FROM (" + query + f") AS mcp_read_only_query LIMIT {MAX_ROWS}").fetchall()

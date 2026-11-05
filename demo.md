@@ -11,7 +11,7 @@ make setup
 make model-catalog-refresh
 ```
 
-Edit `.env` and set `GITHUB_ORG`, `GITHUB_USER`, `GITHUB_OAUTH_CLIENT_ID`, `GITHUB_OAUTH_CLIENT_SECRET`, `AZURE_OPENAI_BASE_URL`, and `AZURE_OPENAI_API_KEY`. The OAuth callback must be `http://localhost:5556/dex/callback`; authorize the OAuth App for the configured organization. `make setup` generates local secrets and creates missing config files without replacing existing configs.
+Edit `.env` and set `GITHUB_ORG=nationalteam`, `GITHUB_TEAMS=sre`, `GITHUB_USER`, `GITHUB_OAUTH_CLIENT_ID`, `GITHUB_OAUTH_CLIENT_SECRET`, `AZURE_OPENAI_BASE_URL`, and `AZURE_OPENAI_API_KEY`. The OAuth callback must be `http://localhost:5556/dex/callback`; authorize the OAuth App for the configured organization. The signed JWT must include `nationalteam:sre` for agent access. `make setup` generates local secrets and creates missing config files without replacing existing configs.
 
 ```sh
 docker compose up -d --build --force-recreate
@@ -90,10 +90,10 @@ Authentication identifies the caller; authorization decides which routes/tools t
 | Credential | Header | Access |
 |---|---|---|
 | Vault JWT from step 2 | `Authorization: Bearer $JWT` | Model APIs; gateway verifies signature, issuer, `agentgateway` audience, expiry, and required identity claims |
-| Local demo API key | `x-api-key: test` or `x-api-key: test-ratelimit` | Model APIs only; keys map to separate usernames and rate-limit budgets |
-| Scoped Vault JWT | `Authorization: Bearer $JWT` | MCP/A2A only when its signed `access` claim matches the tool/route allowlist |
+| Local demo API key | `x-api-key: test` or `x-api-key: test-ratelimit` | Model APIs and all agents; both keys belong to `nationalteam:sre` |
+| Scoped Vault JWT | `Authorization: Bearer $JWT` | MCP only when its signed `access` claim matches the tool allowlist |
 
-Model APIs accept either a valid JWT or a configured API key; neither credential means access is denied. Browser SSO is separate from API authentication. The simple API keys are public demo credentials, not deployment secrets.
+Model APIs accept either a valid JWT or a configured API key; neither credential means access is denied. Every agent accepts a JWT or API key whose signed/configured `groups` contains `nationalteam:sre`, so one authorized caller can use any agent. Browser SSO is separate from API authentication. The simple API keys are public demo credentials, not deployment secrets.
 
 ### Opt-in model guardrails
 
@@ -123,7 +123,7 @@ These patterns are a demonstration, not a complete sensitive-data or prompt-inje
 
 ## 4. Demonstrate MCP tools
 
-The playground needs a one-hour, tool-scoped Vault JWT; browser SSO and the normal model JWT grant no MCP tools.
+The playground uses one-hour Vault JWTs: `nationalteam:sre` members can use all MCP tools, while other identities need a tool-scoped `access` claim.
 
 ```sh
 mint_jwt() {
@@ -187,26 +187,34 @@ The demo database starts without sample tables. Add data using a trusted databas
 
 ## 6. Call A2A agents
 
-The `demo-tools-agents` service hosts six deterministic agents, not a kagent controller; use HTTP card discovery and `message/send` ([kagent A2A example](https://kagent.dev/docs/kagent/1.x/examples/a2a-agents/)), with section 4's helper:
+The `demo-tools-agents` service hosts six deterministic agents, not a kagent controller; use HTTP card discovery and `message/send` ([kagent A2A example](https://kagent.dev/docs/kagent/1.x/examples/a2a-agents/)). Every agent accepts the shared caller JWT or API key when it belongs to `nationalteam:sre`:
 
 ```sh
-export JWT="$(mint_jwt agents:calculator)"
 curl -sS http://localhost:4000/agents/calculator/.well-known/agent-card.json \
-  -H "Authorization: Bearer $JWT"
+  -H 'x-api-key: test'
 
 curl -sS http://localhost:4000/agents/calculator \
-  -H "Authorization: Bearer $JWT" \
+  -H 'x-api-key: test' \
   -H 'Content-Type: application/json' \
   --data '{"jsonrpc":"2.0","id":1,"method":"message/send","params":{"message":{"kind":"message","role":"user","messageId":"demo-1","parts":[{"kind":"text","text":"(12 + 8) * 3"}]}}}'
 ```
 
-Expect an agent message containing `{"value":60}`. Unlike kagent's controller, these demos have no gRPC, streaming, persisted sessions/tasks, or human-in-the-loop support. Routes and exact-access authorization are defined in [config/agentgateway.yaml](config/agentgateway.yaml); restart Agentgateway after changing it.
+To call an agent URL directly, POST a `message/send` JSON-RPC request with either the caller API key or a JWT in `Authorization`. For example, use the login JWT from step 2:
+
+```sh
+curl -i http://localhost:4000/agents/calculator \
+  -H "Authorization: Bearer $JWT" \
+  -H 'Content-Type: application/json' \
+  --data '{"jsonrpc":"2.0","id":1,"method":"message/send","params":{"message":{"kind":"message","role":"user","messageId":"demo-jwt","parts":[{"kind":"text","text":"(12 + 8) * 3"}]}}}'
+```
+
+The response is HTTP 200 with an agent message containing `{"value":60}`. A missing/invalid credential or a JWT without `groups: [nationalteam:sre]` is rejected with HTTP 401/403. The API key and JWT here authenticate the caller; they are distinct from agent-side model-provider keys. Unlike kagent's controller, these demos have no gRPC, streaming, persisted sessions/tasks, or human-in-the-loop support. Routes and group authorization are defined in [config/agentgateway.yaml](config/agentgateway.yaml); restart Agentgateway after changing it.
 
 ### List agents
 
-These are the configured agents; `coder` runs only when its Compose profile is started. Every endpoint is `/agents/NAME`; its card is `/agents/NAME/.well-known/agent-card.json`. A2A has no global list endpoint in this demo. Inspect configured routes with `rg -n 'pathPrefix: /agents/' config/agentgateway.yaml`, then fetch an agent's card with its scoped JWT.
+These are the configured agents; `coder` runs only when its Compose profile is started. Every endpoint is `/agents/NAME`; its card is `/agents/NAME/.well-known/agent-card.json`. A2A has no global list endpoint in this demo. Inspect configured routes with `rg -n 'pathPrefix: /agents/' config/agentgateway.yaml`, then fetch any card with the same authorized caller credential.
 
-For each agent, set `export JWT="$(mint_jwt agents:NAME)"`, replace the URL's agent name, and use its input:
+The same `x-api-key: test` (or an authorized JWT) works for each endpoint:
 
 | Agent | Example input | Behavior |
 |---|---|---|
@@ -216,7 +224,7 @@ For each agent, set `export JWT="$(mint_jwt agents:NAME)"`, replace the URL's ag
 | `research` | `https://www.iana.org/domains/reserved` | Fetches a small public page from the HTTPS allowlist |
 | `data-analyst` | `{"format":"csv","data":"team,score\nplatform,7\nsecurity,9\n"}` | Summarizes CSV or JSON records |
 | `issue-triage` | `Security vulnerability with leaked credential` | Suggests a team using keywords |
-| `coder` (optional) | `Fix the failing tests in this project` | Local Codex CLI edits the mounted project; queues tasks and streams progress |
+| `coder` (optional) | `Create main.go that prints Hello, world!` | Local Codex CLI edits the mounted project; queues tasks and streams progress |
 
 Research makes an outbound request and only permits `www.iana.org`, `www.rfc-editor.org`, and `www.python.org`; it does not follow redirects. Data analysis has bounded input/row/column sizes. Issue triage is heuristic guidance only, not authorization or an action.
 
@@ -241,21 +249,32 @@ AGW authenticates and routes requests; it does not schedule jobs itself. A calle
 
    The container runs as UID 1000, publishes no backend port, and mounts only the selected workspace writable plus a `codex-state` volume. Its root filesystem is read-only; capabilities are dropped and privilege escalation is disabled. Codex uses `externalSandbox` because Docker supplies this isolation, without requiring nested user namespaces or privileged Docker mode. `CODEX_MODEL` defaults to `gpt-6-luna`; model calls use AGW with the local `CODEX_MODEL_API_KEY=test` key. Additional project runtimes belong in [the coder image](examples/codex/Dockerfile).
 
-2. Use section 4's local-operator helper to mint a dedicated coder JWT, then discover the card:
+2. Discover the card with an authorized caller credential:
 
    ```sh
-   export JWT="$(mint_jwt agents:coder)"
    curl -fsS http://localhost:4000/agents/coder/.well-known/agent-card.json \
-     -H "Authorization: Bearer $JWT"
+     -H 'x-api-key: test'
    ```
 
-   The normal GitHub/model JWT and the model API key cannot delegate coding jobs. AGW also authenticates its backend connection using the private `CODEX_AGENT_TOKEN` generated by `make setup`.
+   This caller key is the same credential used for every agent. If Codex needs a model, `CODEX_MODEL_API_KEY` authenticates its request to AGW's model API. AGW separately authenticates its backend connection using the private `CODEX_AGENT_TOKEN` generated by `make setup`.
 
-3. Submit a bounded instruction describing the change and its acceptance check:
+3. Submit a bounded instruction describing the change and its acceptance check. For example, ask coder to create a Go Hello World program:
 
    ```sh
    python3 scripts/coder-task.py send \
-     "Fix the failing calculator test. Run the relevant tests and summarize the diff."
+     "Create main.go in /workspace with a minimal Go program that prints exactly Hello, world! Use package main and gofmt the file if available. Reply with the file contents; do not modify anything else."
+   ```
+
+   The expected `main.go` is:
+
+   ```go
+   package main
+
+   import "fmt"
+
+   func main() {
+   	fmt.Println("Hello, world!")
+   }
    ```
 
    The response contains `result.id` (task ID), `result.contextId` (conversation ID), and `result.status.state`. Copy the returned IDs for the commands below:
@@ -274,7 +293,7 @@ AGW authenticates and routes requests; it does not schedule jobs itself. A calle
    python3 scripts/coder-task.py stream "Run the project tests and report the result"
    ```
 
-   For another agent or an A2A client, send this JSON-RPC request to `http://localhost:4000/agents/coder` with `Authorization: Bearer $JWT` and `Content-Type: application/json`:
+   For another agent or an A2A client, send this JSON-RPC request to `http://localhost:4000/agents/coder` with an authorized caller JWT/API key and `Content-Type: application/json`:
 
    ```json
    {
@@ -296,13 +315,13 @@ AGW authenticates and routes requests; it does not schedule jobs itself. A calle
 
 Operational limits: one active task, 16 queued tasks, 128 retained tasks/contexts, and a one-hour turn timeout. IDs are in memory and reset when the adapter restarts; Codex state and workspace edits persist. No interactive approval interface is provided: extra permissions are declined, and unsupported questions fail the task. A caller's instructions cannot change the configured workspace.
 
-Optional live check: `python3 scripts/check-coder.py` uses the exported coder JWT and model quota, verifies a workspace write and same-context follow-up, then removes its test file. Set `CODEX_WORKSPACE` in that shell too if the container uses a different project.
+Optional live check: `python3 scripts/check-coder.py` uses `AGW_API_KEY` (default `test`) or `JWT`, plus model quota; it verifies a workspace write and same-context follow-up, then removes its test file. Set `CODEX_WORKSPACE` in that shell too if the container uses a different project.
 
 Host alternative: install Codex CLI and Python 3, set `CODEX_AGENT_BACKEND=host.docker.internal:8082` in `.env`, run `docker compose up -d agentgateway`, and start `make coder-host`. This uses Codex's `workspace-write` sandbox and binds the authenticated adapter to host port 8082 for Docker access. Do not run host and Docker adapters against the same project concurrently.
 
-## 7. Configure route identities and run the access checks
+## 7. Configure tool identities and run the access checks
 
-The access checker needs separate identities; mint each into `$JWT`, then populate its required environment variable (section 4's local-operator helper).
+MCP uses scoped JWTs; A2A uses an API key in `nationalteam:sre` or a JWT carrying that group. Set `AGW_API_KEY` to the caller key if not using the local default `test`. Optionally set `JWT_SRE` and `JWT_NO_SRE` to verify JWT allow/deny for the group policy.
 
 ```sh
 for spec in \
@@ -310,21 +329,15 @@ for spec in \
   JWT_TOOL_STATS=tools:text-stats \
   JWT_TOOL_REVERSE=tools:reverse-text \
   JWT_TOOL_POSTGRES=tools:postgres-read \
-  JWT_AGENT_CALCULATOR=agents:calculator \
-  JWT_AGENT_TEXT_ANALYST=agents:text-analyst \
-  JWT_AGENT_TEXT_TRANSFORMER=agents:text-transformer \
-  JWT_AGENT_RESEARCH=agents:research \
-  JWT_AGENT_DATA_ANALYST=agents:data-analyst \
-  JWT_AGENT_ISSUE_TRIAGE=agents:issue-triage \
   JWT_NO_ACCESS=none; do
   export JWT="$(mint_jwt "${spec#*=}")"
   export "${spec%%=*}=$JWT"
 done
+export JWT_NO_SRE="$JWT_NO_ACCESS"
 python3 scripts/check-examples.py
-eval "$(make jwt)"  # restore the model JWT
 ```
 
-This checks allowed calls, cross-tool denials, agent cards/messages, and rejection of missing, invalid, and valid-but-ungranted tokens. It also performs the research agent's allowed public fetch. To run the offline unit tests and Compose security check instead:
+This checks allowed calls, cross-tool denials, each agent's card/message using the same caller credential, and rejection of missing/invalid credentials (plus `JWT_NO_SRE` when supplied). It also performs the research agent's allowed public fetch. To run the offline unit tests and Compose security check instead:
 
 ```sh
 python3 -B -m unittest discover -s tests -v

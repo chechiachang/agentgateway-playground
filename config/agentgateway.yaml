@@ -15,6 +15,7 @@ config:
 
 frontendPolicies:
   accessLog:
+    preset: otel
     database:
       llm: metadata
 
@@ -44,7 +45,7 @@ llm:
   gateways: [default]
   policies:
     # Permissive auth plus the allow rule below means either valid credential works.
-    jwtAuth:
+    jwtAuth: &agent-jwt
       mode: permissive
       issuer: http://localhost:8200/v1/identity/oidc
       audiences: [agentgateway]
@@ -52,7 +53,7 @@ llm:
         url: http://vault:8200/v1/identity/oidc/.well-known/keys
       jwtValidationOptions:
         requiredClaims: [exp, iss, aud, sub, username]
-    apiKey:
+    apiKey: &caller-api-key
       mode: permissive
       location:
         header:
@@ -62,12 +63,12 @@ llm:
           metadata:
             name: test
             username: test
-            groups: [sre]
+            groups: [nationalteam:sre]
         - keyHash: "sha256:ed2e175af3a2d2aa5037e68c0abec158d3bec746917027bcce0c0e77ac8304a7"
           metadata:
             name: test-ratelimit
             username: test-ratelimit
-            groups: [sre]
+            groups: [nationalteam:sre]
     authorization:
       rules:
         - allow: 'jwt != null || apiKey != null'
@@ -93,6 +94,7 @@ llm:
               value: 'apiKey != null ? apiKey.username : ""'
           type: tokens
           cost: 'math.round(llm.cost.total * 1000000.0).uint()'
+    # Global guardrails temporarily disabled; only *-guarded models opt in.
   models:
     - name: gpt-6-luna
       provider: openAI
@@ -179,12 +181,14 @@ mcp:
         requiredClaims: [exp, iss, aud, sub, username]
     mcpAuthorization:
       rules:
+        # SRE-group JWTs can use all tools; other JWTs need explicit tool grants.
+        - allow: 'jwt != null && jwt.groups != null && jwt.groups.exists(group, group == "nationalteam:sre")'
         # MCP names are target-prefixed because prefixMode is always.
-        # Explicit allowlist; tools not listed here are inaccessible.
         - allow: 'mcp.tool.name == "playground_calculate" && jwt.access == "tools:calculate"'
         - allow: 'mcp.tool.name == "playground_text_stats" && jwt.access == "tools:text-stats"'
         - allow: 'mcp.tool.name == "playground_reverse_text" && jwt.access == "tools:reverse-text"'
         - allow: 'mcp.tool.name == "postgres_postgres_list_tables" && jwt.access == "tools:postgres-read"'
+        - allow: 'mcp.tool.name == "postgres_postgres_list_databases" && jwt.access == "tools:postgres-read"'
         - allow: 'mcp.tool.name == "postgres_postgres_describe_table" && jwt.access == "tools:postgres-read"'
         - allow: 'mcp.tool.name == "postgres_postgres_query" && jwt.access == "tools:postgres-read"'
   targets:
@@ -206,10 +210,11 @@ routes:
       - path:
           pathPrefix: /agents/coder
     policies:
-      jwtAuth: *vault-jwt
+      jwtAuth: *agent-jwt
+      apiKey: *caller-api-key
       authorization:
         rules:
-          - allow: 'jwt.access == "agents:coder"'
+          - allow: '(jwt != null && jwt.groups != null && jwt.groups.exists(group, group == "nationalteam:sre")) || (apiKey != null && apiKey.groups != null && apiKey.groups.exists(group, group == "nationalteam:sre"))'
       a2a: {}
       backendAuth:
         key:
@@ -225,10 +230,11 @@ routes:
       - path:
           pathPrefix: /agents/calculator
     policies:
-      jwtAuth: *vault-jwt
+      jwtAuth: *agent-jwt
+      apiKey: *caller-api-key
       authorization:
         rules:
-          - allow: 'jwt.access == "agents:calculator"'
+          - allow: '(jwt != null && jwt.groups != null && jwt.groups.exists(group, group == "nationalteam:sre")) || (apiKey != null && apiKey.groups != null && apiKey.groups.exists(group, group == "nationalteam:sre"))'
       a2a: {}
     backends:
       - host: demo-tools-agents:8080
@@ -238,10 +244,11 @@ routes:
       - path:
           pathPrefix: /agents/text-analyst
     policies:
-      jwtAuth: *vault-jwt
+      jwtAuth: *agent-jwt
+      apiKey: *caller-api-key
       authorization:
         rules:
-          - allow: 'jwt.access == "agents:text-analyst"'
+          - allow: '(jwt != null && jwt.groups != null && jwt.groups.exists(group, group == "nationalteam:sre")) || (apiKey != null && apiKey.groups != null && apiKey.groups.exists(group, group == "nationalteam:sre"))'
       a2a: {}
     backends:
       - host: demo-tools-agents:8080
@@ -252,10 +259,11 @@ routes:
       - path:
           pathPrefix: /agents/text-transformer
     policies:
-      jwtAuth: *vault-jwt
+      jwtAuth: *agent-jwt
+      apiKey: *caller-api-key
       authorization:
         rules:
-          - allow: 'jwt.access == "agents:text-transformer"'
+          - allow: '(jwt != null && jwt.groups != null && jwt.groups.exists(group, group == "nationalteam:sre")) || (apiKey != null && apiKey.groups != null && apiKey.groups.exists(group, group == "nationalteam:sre"))'
       a2a: {}
     backends:
       - host: demo-tools-agents:8080
@@ -266,10 +274,11 @@ routes:
       - path:
           pathPrefix: /agents/research
     policies:
-      jwtAuth: *vault-jwt
+      jwtAuth: *agent-jwt
+      apiKey: *caller-api-key
       authorization:
         rules:
-          - allow: 'jwt.access == "agents:research"'
+          - allow: '(jwt != null && jwt.groups != null && jwt.groups.exists(group, group == "nationalteam:sre")) || (apiKey != null && apiKey.groups != null && apiKey.groups.exists(group, group == "nationalteam:sre"))'
       a2a: {}
     backends:
       - host: demo-tools-agents:8080
@@ -279,10 +288,11 @@ routes:
       - path:
           pathPrefix: /agents/data-analyst
     policies:
-      jwtAuth: *vault-jwt
+      jwtAuth: *agent-jwt
+      apiKey: *caller-api-key
       authorization:
         rules:
-          - allow: 'jwt.access == "agents:data-analyst"'
+          - allow: '(jwt != null && jwt.groups != null && jwt.groups.exists(group, group == "nationalteam:sre")) || (apiKey != null && apiKey.groups != null && apiKey.groups.exists(group, group == "nationalteam:sre"))'
       a2a: {}
     backends:
       - host: demo-tools-agents:8080
@@ -292,10 +302,11 @@ routes:
       - path:
           pathPrefix: /agents/issue-triage
     policies:
-      jwtAuth: *vault-jwt
+      jwtAuth: *agent-jwt
+      apiKey: *caller-api-key
       authorization:
         rules:
-          - allow: 'jwt.access == "agents:issue-triage"'
+          - allow: '(jwt != null && jwt.groups != null && jwt.groups.exists(group, group == "nationalteam:sre")) || (apiKey != null && apiKey.groups != null && apiKey.groups.exists(group, group == "nationalteam:sre"))'
       a2a: {}
     backends:
       - host: demo-tools-agents:8080
