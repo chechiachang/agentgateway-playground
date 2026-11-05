@@ -71,7 +71,7 @@ vault write auth/oidc/role/agentgateway - <<EOF
 EOF
 
 # Vault only resolves upstream groups with a pre-provisioned external group alias.
-# No policies or MCP/A2A access grants are attached to these informational groups.
+# Groups are embedded in Vault JWTs and used by A2A route authorization.
 oidc_accessor=$(vault read -field=accessor sys/auth/oidc)
 saved_ifs=$IFS
 IFS=,

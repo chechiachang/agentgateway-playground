@@ -19,13 +19,6 @@ for spec in \
   'tools:calculate' \
   'tools:text-stats' \
   'tools:reverse-text' \
-  'agents:calculator' \
-  'agents:text-analyst' \
-  'agents:text-transformer' \
-  'agents:research' \
-  'agents:data-analyst' \
-  'agents:issue-triage' \
-  'agents:coder' \
   'none'; do
   name=$(printf '%s' "$spec" | tr ':' '-')
   create_identity "demo-$name" "$spec"

@@ -9,15 +9,15 @@ from urllib.request import Request, urlopen
 from uuid import uuid4
 
 BASE = os.environ.get("AGW_URL", "http://localhost:4000").rstrip("/")
-TOKEN = os.environ.get("JWT")
-if not TOKEN:
-    raise SystemExit("Export JWT with agents:coder access first")
+AUTH_HEADERS = ({"Authorization": "Bearer " + os.environ["JWT"]}
+                if os.environ.get("JWT") else
+                {"x-api-key": os.environ.get("AGW_API_KEY", "test")})
 
 
 def rpc(method, params):
     body = {"jsonrpc": "2.0", "id": 1, "method": method, "params": params}
     request = Request(BASE + "/agents/coder", data=json.dumps(body).encode(),
-                      headers={"Content-Type": "application/json", "Authorization": "Bearer " + TOKEN})
+                      headers={**AUTH_HEADERS, "Content-Type": "application/json"})
     with urlopen(request, timeout=30) as response:
         result = json.load(response)
     if "error" in result:
@@ -60,7 +60,7 @@ try:
             error.close()
         else:
             raise AssertionError("Unauthenticated coder request accepted")
-    card_request = Request(BASE + "/agents/coder/.well-known/agent-card.json", headers={"Authorization": "Bearer " + TOKEN})
+    card_request = Request(BASE + "/agents/coder/.well-known/agent-card.json", headers=AUTH_HEADERS)
     with urlopen(card_request, timeout=10) as response:
         assert json.load(response)["capabilities"]["streaming"]
     print("PASS coder discovery and missing-token denial", flush=True)

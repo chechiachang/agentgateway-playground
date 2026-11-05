@@ -6,6 +6,7 @@ import json
 import csv
 import io
 import ipaddress
+import logging
 import math
 import operator
 import os
@@ -59,6 +60,7 @@ AGENTS = {
     "issue-triage": {"name": "Issue triage", "description": "Heuristically suggests a fixed team with rationale and confidence; never authorizes or performs actions.",
                      "examples": ["Login fails after deployment"], "tags": ["triage", "heuristic"]},
 }
+LOGGER = logging.getLogger("demo.mcp")
 
 
 def calculate(expression):
@@ -375,10 +377,20 @@ class Handler(BaseHTTPRequestHandler):
         if method == "tools/list":
             return {"tools": TOOLS}
         if method == "tools/call":
+            name = params.get("name")
+            arguments = params.get("arguments", {})
+            LOGGER.info("MCP tool call: %s", name)
             try:
-                value = call_tool(params.get("name"), params.get("arguments", {}))
+                value = call_tool(name, arguments)
+                if name == "calculate":
+                    # Calculator inputs and results are useful access details; other tools
+                    # may carry user text or return source data, so log metadata only.
+                    LOGGER.info("  └ %s", json.dumps(arguments, ensure_ascii=False, allow_nan=False))
+                    LOGGER.info("  └ %s", json.dumps(value, ensure_ascii=False, allow_nan=False))
+                LOGGER.info("MCP tool result: %s (success)", name)
                 return {"content": [{"type": "text", "text": json.dumps(value)}], "isError": False}
             except (ValueError, SyntaxError, ArithmeticError, RecursionError) as error:
+                LOGGER.info("MCP tool result: %s (error)", name)
                 return {"content": [{"type": "text", "text": str(error)}], "isError": True}
         return None
 
@@ -429,4 +441,5 @@ class Handler(BaseHTTPRequestHandler):
 
 
 if __name__ == "__main__":
+    logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(message)s")
     ThreadingHTTPServer(("0.0.0.0", 8080), Handler).serve_forever()

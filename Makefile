@@ -31,8 +31,10 @@ codex:
 	@jwt_env=$$($(MAKE) --no-print-directory jwt) || { echo 'Run make login, then retry make codex.' >&2; exit 1; }; \
 	  eval "$$jwt_env"; \
 	  codex -m "$(CODEX_MODEL)" \
+	    -c 'approval_policy="on-request"' \
 	    -c 'model_provider="agw"' \
-	    -c 'model_providers.agw={name="Agentgateway",base_url="http://localhost:4000/v1",env_key="JWT",wire_api="responses",requires_openai_auth=false}'
+	    -c 'model_providers.agw={name="Agentgateway",base_url="http://localhost:4000/v1",env_key="JWT",wire_api="responses",requires_openai_auth=false}' \
+	    -c 'mcp_servers.agw={url="http://localhost:4000/mcp",bearer_token_env_var="JWT"}'
 
 # Refresh public model prices used by Agentgateway's local cost accounting.
 model-catalog-refresh:

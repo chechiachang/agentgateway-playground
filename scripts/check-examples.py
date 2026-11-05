@@ -12,12 +12,14 @@ JWT = os.environ.get("JWT")  # Optional broad token retained for model/UI smoke 
 SESSION = None
 
 
-def request(path, body=None, token=None):
+def request(path, body=None, token=None, api_key=None):
     global SESSION
     headers = {"Accept": "application/json, text/event-stream"}
     token = (JWT or "") if token is None else token
     if token:
         headers["Authorization"] = "Bearer " + token
+    if api_key:
+        headers["x-api-key"] = api_key
     if path == "/mcp" and SESSION:
         headers["Mcp-Session-Id"] = SESSION
         headers["MCP-Protocol-Version"] = "2025-06-18"
@@ -41,49 +43,58 @@ def request(path, body=None, token=None):
         return json.loads(text)
 
 
-def rpc(path, method, params, request_id=1, token=None):
-    result = request(path, {"jsonrpc": "2.0", "id": request_id, "method": method, "params": params}, token=token)
+def rpc(path, method, params, request_id=1, token=None, api_key=None):
+    result = request(path, {"jsonrpc": "2.0", "id": request_id, "method": method, "params": params}, token=token, api_key=api_key)
     assert result is not None and "error" not in result, result
     return result["result"]
 
 
-# Every identity has exactly one route-class grant; a second identity has a
-# valid gateway JWT but no access claim to assert deny-by-default behavior.
+# MCP uses scoped JWTs; A2A accepts any caller credential in nationalteam:sre.
 identities = {
     "tool-calculate": "tools:calculate",
     "tool-stats": "tools:text-stats",
     "tool-reverse": "tools:reverse-text",
     "tool-postgres": "tools:postgres-read",
-    "agent-calculator": "agents:calculator",
-    "agent-text-analyst": "agents:text-analyst",
-    "agent-text-transformer": "agents:text-transformer",
-    "agent-research": "agents:research",
-    "agent-data-analyst": "agents:data-analyst",
-    "agent-issue-triage": "agents:issue-triage",
 }
 TOKENS = {name: os.environ.get("JWT_" + name.upper().replace("-", "_")) for name in identities}
 if any(not token for token in TOKENS.values()):
-    sys.exit("Set all route-specific JWT_* variables from the README identity-minting instructions")
+    sys.exit("Set JWT_TOOL_CALCULATE, JWT_TOOL_STATS, JWT_TOOL_REVERSE, and JWT_TOOL_POSTGRES")
 no_access = os.environ.get("JWT_NO_ACCESS")
 if not no_access:
-    sys.exit("Set JWT_NO_ACCESS to an authenticated identity with no agentgateway_access metadata")
+    sys.exit("Set JWT_NO_ACCESS to an authenticated identity with no tool access")
 
-# Transport authentication rejects absent/invalid bearer tokens on each route class.
-probe_paths = [
-    ("/mcp", {"jsonrpc": "2.0", "id": 1, "method": "tools/list", "params": {}}),
-    ("/agents/calculator/.well-known/agent-card.json", None),
-    ("/agents/calculator", {"jsonrpc": "2.0", "id": 1, "method": "message/send", "params": {}}),
-] + [(f"/agents/{name}/.well-known/agent-card.json", None) for name in (
-    "text-analyst", "text-transformer", "research", "data-analyst", "issue-triage")]
-for path, body in probe_paths:
-    for token, label in (("", "no token"), ("invalid", "invalid token")):
+AGENT_NAMES = ("calculator", "text-analyst", "text-transformer", "research", "data-analyst", "issue-triage")
+AGW_API_KEY = os.environ.get("AGW_API_KEY", "test")
+SRE_TOKEN = os.environ.get("JWT_SRE")
+no_sre = os.environ.get("JWT_NO_SRE")
+
+# MCP rejects missing/invalid JWTs; A2A rejects missing/invalid credentials.
+try:
+    request("/mcp", {"jsonrpc": "2.0", "id": 1, "method": "tools/list", "params": {}}, token="")
+except HTTPError as error:
+    assert error.code in (401, 403), error.code
+else:
+    raise AssertionError("Missing MCP JWT accepted")
+for name in AGENT_NAMES:
+    path = f"/agents/{name}/.well-known/agent-card.json"
+    for token, api_key, label in (("", None, "missing credential"), ("", "invalid", "invalid API key")):
         try:
-            request(path, body, token=token)
+            request(path, token=token, api_key=api_key)
         except HTTPError as error:
             assert error.code in (401, 403), (path, label, error.code)
         else:
             raise AssertionError(f"{label} accepted for {path}")
-print("PASS missing/invalid bearer rejected for MCP, agent card, and A2A message routes")
+    if no_sre:
+        try:
+            request(path, token=no_sre)
+        except HTTPError as error:
+            assert error.code in (401, 403), (path, "JWT without nationalteam:sre", error.code)
+        else:
+            raise AssertionError(f"JWT without nationalteam:sre accepted for {path}")
+    if SRE_TOKEN:
+        card = request(path, token=SRE_TOKEN)
+        assert card["url"].endswith(f"/agents/{name}") and card["security"], card
+print("PASS A2A rejects missing/invalid credentials" + (" and JWTs without nationalteam:sre" if no_sre else "") + ("; SRE-group JWT accepted" if SRE_TOKEN else ""))
 
 # Per-tool identities can only discover/call their granted MCP tool; calls to
 # either neighboring tools or an unknown tool must be rejected by MCP policy.
@@ -131,13 +142,8 @@ for identity, allowed_suffix, args, expected in [
         raise AssertionError(f"{identity} unexpectedly called unknown tool")
     print(f"PASS MCP {identity}: allow {allowed_suffix}; deny other/unknown tool")
 
-# A valid identity without a grant is denied for every tool and agent route.
-no_access_paths = [
-    ("/mcp", {"jsonrpc": "2.0", "id": 20, "method": "tools/list", "params": {}}),
-    ("/agents/calculator/.well-known/agent-card.json", None),
-    ("/agents/calculator", {"jsonrpc": "2.0", "id": 21, "method": "message/send", "params": {}}),
-] + [(f"/agents/{name}/.well-known/agent-card.json", None) for name in (
-    "text-analyst", "text-transformer", "research", "data-analyst", "issue-triage")]
+# A valid JWT without a tool grant is denied by MCP.
+no_access_paths = [("/mcp", {"jsonrpc": "2.0", "id": 20, "method": "tools/list", "params": {}})]
 for path, body in no_access_paths:
     try:
         request(path, body, token=no_access)
@@ -145,7 +151,7 @@ for path, body in no_access_paths:
         assert error.code in (401, 403), (path, error.code)
     else:
         raise AssertionError(f"Valid identity without an access grant accepted for {path}")
-print("PASS valid JWT without access claim denied by default for MCP, all agent cards and A2A routes")
+print("PASS valid JWT without a tool claim is denied by MCP")
 
 
 
@@ -158,14 +164,12 @@ for name, text, expected in [
     ("issue-triage", "Deployment gateway crash", {"team": "platform"}),
 ]:
     path = "/agents/" + name
-    identity = "agent-" + name
-    token = TOKENS[identity]
-    card = request(path + "/.well-known/agent-card.json", token=token)
+    card = request(path + "/.well-known/agent-card.json", token="", api_key=AGW_API_KEY)
     assert card["url"].endswith(path) and card["security"], card
     result = rpc(path, "message/send", {"message": {
         "kind": "message", "role": "user", "messageId": str(uuid4()),
         "parts": [{"kind": "text", "text": text}],
-    }}, token=token)
+    }}, token="", api_key=AGW_API_KEY)
     parsed_result = json.loads(result["parts"][0]["text"])
     if name == "research":
         assert "text" in parsed_result and len(parsed_result["text"]) <= 16384, parsed_result
